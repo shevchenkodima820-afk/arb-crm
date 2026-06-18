@@ -106,6 +106,25 @@ const AuthPage = () => {
         <button onClick={submit} disabled={loading} style={{ ...S.btn, width:"100%", padding:"11px", opacity:loading?0.7:1 }}>{loading?"Завантаження…":mode==="login"?"Увійти":"Зареєструватись"}</button>
       </div>
     </div>
+
+      {/* Profile Drawer */}
+      {profileOpen && (
+        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
+          {/* Overlay */}
+          <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
+          {/* Drawer */}
+          <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
+              <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
+              <button onClick={()=>setProfileOpen(false)} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer", lineHeight:1 }}>×</button>
+            </div>
+            <div style={{ padding:24, flex:1 }}>
+              <ProfileTab user={user} profile={profile} onProfileUpdate={(p)=>{ setProfile(p); }} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -130,6 +149,25 @@ const DomainForm = ({ initial={}, onSave, onClose, loading }) => {
         <button onClick={onClose} style={S.btnGhost}>Скасувати</button>
         <button onClick={() => onSave(f)} disabled={loading} style={{ ...S.btn, opacity:loading?0.7:1 }}>{loading?"…":"Зберегти"}</button>
       </div>
+    </div>
+
+      {/* Profile Drawer */}
+      {profileOpen && (
+        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
+          {/* Overlay */}
+          <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
+          {/* Drawer */}
+          <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
+              <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
+              <button onClick={()=>setProfileOpen(false)} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer", lineHeight:1 }}>×</button>
+            </div>
+            <div style={{ padding:24, flex:1 }}>
+              <ProfileTab user={user} profile={profile} onProfileUpdate={(p)=>{ setProfile(p); }} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -206,6 +244,25 @@ const DomainsTab = ({ user, isAdmin, canSeeAll }) => {
       )}
       {modal && <Modal title={modal.mode==="add"?"Новий домен":"Редагувати"} onClose={()=>setModal(null)}><DomainForm initial={modal.data} onSave={handleSave} onClose={()=>setModal(null)} loading={saving} /></Modal>}
     </div>
+
+      {/* Profile Drawer */}
+      {profileOpen && (
+        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
+          {/* Overlay */}
+          <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
+          {/* Drawer */}
+          <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
+              <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
+              <button onClick={()=>setProfileOpen(false)} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer", lineHeight:1 }}>×</button>
+            </div>
+            <div style={{ padding:24, flex:1 }}>
+              <ProfileTab user={user} profile={profile} onProfileUpdate={(p)=>{ setProfile(p); }} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -253,6 +310,25 @@ const CreativeForm = ({ initial={}, domains, onSave, onClose, loading, userId })
         <button onClick={onClose} style={S.btnGhost}>Скасувати</button>
         <button onClick={()=>onSave(f)} disabled={loading||uploading} style={{ ...S.btn, opacity:(loading||uploading)?0.7:1 }}>{loading?"…":"Зберегти"}</button>
       </div>
+    </div>
+
+      {/* Profile Drawer */}
+      {profileOpen && (
+        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
+          {/* Overlay */}
+          <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
+          {/* Drawer */}
+          <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
+              <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
+              <button onClick={()=>setProfileOpen(false)} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer", lineHeight:1 }}>×</button>
+            </div>
+            <div style={{ padding:24, flex:1 }}>
+              <ProfileTab user={user} profile={profile} onProfileUpdate={(p)=>{ setProfile(p); }} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -336,6 +412,25 @@ const CreativesTab = ({ user, isAdmin, canSeeAll, domains }) => {
       {zoom && <div onClick={()=>setZoom(null)} style={{ position:"fixed",inset:0,background:"#000c",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",cursor:"zoom-out" }}><img src={zoom} alt="" style={{ maxWidth:"90vw",maxHeight:"90vh",borderRadius:10 }} /></div>}
       {modal && <Modal title={modal.mode==="add"?"Новий креатив":"Редагувати"} onClose={()=>setModal(null)}><CreativeForm initial={modal.data} domains={domains} onSave={handleSave} onClose={()=>setModal(null)} loading={saving} userId={user.id} /></Modal>}
     </div>
+
+      {/* Profile Drawer */}
+      {profileOpen && (
+        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
+          {/* Overlay */}
+          <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
+          {/* Drawer */}
+          <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
+              <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
+              <button onClick={()=>setProfileOpen(false)} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer", lineHeight:1 }}>×</button>
+            </div>
+            <div style={{ padding:24, flex:1 }}>
+              <ProfileTab user={user} profile={profile} onProfileUpdate={(p)=>{ setProfile(p); }} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -402,6 +497,25 @@ const StatsTab = ({ domains }) => {
         </div>
       )}
     </div>
+
+      {/* Profile Drawer */}
+      {profileOpen && (
+        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
+          {/* Overlay */}
+          <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
+          {/* Drawer */}
+          <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
+              <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
+              <button onClick={()=>setProfileOpen(false)} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer", lineHeight:1 }}>×</button>
+            </div>
+            <div style={{ padding:24, flex:1 }}>
+              <ProfileTab user={user} profile={profile} onProfileUpdate={(p)=>{ setProfile(p); }} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -457,6 +571,25 @@ const TeamTab = ({ currentUserId, canChangeRoles }) => {
         </div>
       )}
     </div>
+
+      {/* Profile Drawer */}
+      {profileOpen && (
+        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
+          {/* Overlay */}
+          <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
+          {/* Drawer */}
+          <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
+              <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
+              <button onClick={()=>setProfileOpen(false)} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer", lineHeight:1 }}>×</button>
+            </div>
+            <div style={{ padding:24, flex:1 }}>
+              <ProfileTab user={user} profile={profile} onProfileUpdate={(p)=>{ setProfile(p); }} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -466,6 +599,7 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [tab, setTab] = useState("domains");
+  const [profileOpen, setProfileOpen] = useState(false);
   const [domains, setDomains] = useState([]);
 
   useEffect(()=>{
@@ -494,7 +628,6 @@ export default function App() {
     { id:"creatives", label:"🎨 Креативи" },
     { id:"stats",     label:"📊 Статистика" },
     { id:"accounts",  label:"📱 FB Акаунти" },
-    { id:"profile", label:"⚙️ Профіль" },
     ...((isAdmin || isTeamLead) ? [{ id:"team", label:"👥 Команди" }] : []),
   ];
 
@@ -514,7 +647,7 @@ export default function App() {
             ? <img src={profile.avatar_url} alt="" style={{ width:28,height:28,borderRadius:"50%",objectFit:"cover",border:"1px solid #2e3240" }} onError={e=>e.target.style.display="none"} />
             : <div style={{ width:28,height:28,borderRadius:"50%",background:"#1e2330",display:"flex",alignItems:"center",justifyContent:"center",color:"#60a5fa",fontSize:11,fontWeight:800 }}>{userName?.[0]?.toUpperCase()}</div>
           }
-          <span style={{ color:"#475569", fontSize:13 }}>{userName}</span>
+          <span onClick={()=>setProfileOpen(true)} style={{ color:"#94a3b8", fontSize:13, cursor:"pointer" }}>{userName}</span>
           <button onClick={()=>supabase.auth.signOut()} style={{ ...S.btnGhost, padding:"6px 14px", fontSize:13 }}>Вийти</button>
         </div>
       </div>
@@ -525,8 +658,27 @@ export default function App() {
         {tab==="stats"     && <StatsTab     domains={domains} />}
         {tab==="accounts"  && <FbAccountsTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
         {tab==="team"      && (isAdmin || isTeamLead) && <TeamsTab currentUserId={user.id} isAdmin={isAdmin} />}
-        {tab==="profile"    && <ProfileTab user={user} profile={profile} onProfileUpdate={setProfile} />}
+        
       </div>
+    </div>
+
+      {/* Profile Drawer */}
+      {profileOpen && (
+        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
+          {/* Overlay */}
+          <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
+          {/* Drawer */}
+          <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
+              <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
+              <button onClick={()=>setProfileOpen(false)} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer", lineHeight:1 }}>×</button>
+            </div>
+            <div style={{ padding:24, flex:1 }}>
+              <ProfileTab user={user} profile={profile} onProfileUpdate={(p)=>{ setProfile(p); }} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
