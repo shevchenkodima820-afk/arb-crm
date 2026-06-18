@@ -560,9 +560,10 @@ const TeamTab = ({ currentUserId, canChangeRoles }) => {
   useEffect(()=>{ fetch(); },[]);
 
   const setRole = async (id, role) => {
-    await supabase.from("profiles").update({ role }).eq("id", id);
+    const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
+    if (error) { showToast("Помилка: " + error.message, "error"); return; }
     showToast("Роль змінено ✓");
-    fetch();
+    await fetch();
   };
 
   return (
