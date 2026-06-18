@@ -19,6 +19,7 @@ const BADGE_COLORS = {
   "на прогріві":{ bg:"#ca8a0422", color:"#fbbf24", border:"#ca8a04" },
   "admin":     { bg:"#7c3aed22", color:"#a78bfa", border:"#7c3aed" },
   "buyer":     { bg:"#0369a122", color:"#38bdf8", border:"#0369a1" },
+  "teamlead":  { bg:"#d9770622", color:"#fb923c", border:"#d97706" },
 };
 
 const Badge = ({ s }) => {
@@ -131,7 +132,7 @@ const DomainForm = ({ initial={}, onSave, onClose, loading }) => {
 };
 
 // ─── DOMAINS TAB ──────────────────────────────────────────────────────────
-const DomainsTab = ({ user, isAdmin }) => {
+const DomainsTab = ({ user, isAdmin, canSeeAll }) => {
   const [rows, setRows] = useState([]);
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState("");
@@ -254,7 +255,7 @@ const CreativeForm = ({ initial={}, domains, onSave, onClose, loading, userId })
 };
 
 // ─── CREATIVES TAB ────────────────────────────────────────────────────────
-const CreativesTab = ({ user, isAdmin, domains }) => {
+const CreativesTab = ({ user, isAdmin, canSeeAll, domains }) => {
   const [rows, setRows] = useState([]);
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState("");
@@ -437,7 +438,7 @@ const FbForm = ({ initial={}, buyers, onSave, onClose, loading }) => {
   );
 };
 
-const FbAccountsTab = ({ user, isAdmin }) => {
+const FbAccountsTab = ({ user, isAdmin, canSeeAll }) => {
   const [rows, setRows] = useState([]);
   const [buyers, setBuyers] = useState([]);
   const [modal, setModal] = useState(null);
@@ -505,13 +506,13 @@ const FbAccountsTab = ({ user, isAdmin }) => {
           {["живий","на прогріві","забанений"].map(s=><option key={s}>{s}</option>)}
         </select>
         <div style={{ flex:1 }} />
-        {isAdmin && <button onClick={()=>setModal({mode:"add",data:{}})} style={S.btn}>+ Акаунт</button>}
+        {(isAdmin || canSeeAll) && <button onClick={()=>setModal({mode:"add",data:{}})} style={S.btn}>+ Акаунт</button>}
       </div>
 
       {loading?<div style={{ textAlign:"center",color:"#475569",padding:40 }}>Завантаження…</div>:(
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", background:"#13151c", borderRadius:10, overflow:"hidden" }}>
-            <thead><tr><Th>Account ID</Th><Th>Логін</Th><Th>Статус</Th><Th>Байєр</Th><Th>BM</Th><Th>Кабінет</Th><Th>Баланс</Th><Th>Ліміт</Th><Th>Коментар</Th>{isAdmin&&<Th></Th>}</tr></thead>
+            <thead><tr><Th>Account ID</Th><Th>Логін</Th><Th>Статус</Th><Th>Байєр</Th><Th>BM</Th><Th>Кабінет</Th><Th>Баланс</Th><Th>Ліміт</Th><Th>Коментар</Th>{canSeeAll&&<Th></Th>}</tr></thead>
             <tbody>
               {filtered.length===0&&<tr><td colSpan={10} style={{ padding:40,textAlign:"center",color:"#475569" }}>Немає акаунтів</td></tr>}
               {filtered.map(a=>{
@@ -527,9 +528,9 @@ const FbAccountsTab = ({ user, isAdmin }) => {
                     <Td style={{ color:"#4ade80", fontWeight:600 }}>{a.balance?`$${Number(a.balance).toFixed(0)}`:"—"}</Td>
                     <Td style={{ color:"#a78bfa" }}>{a.spend_limit?`$${Number(a.spend_limit).toFixed(0)}`:"—"}</Td>
                     <Td style={{ maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"#64748b" }}>{a.comment||"—"}</Td>
-                    {isAdmin&&<Td>
+                    {canSeeAll&&<Td>
                       <button onClick={()=>setModal({mode:"edit",data:a})} style={{ background:"none",border:"none",color:"#60a5fa",cursor:"pointer" }}>✏️</button>
-                      <button onClick={()=>del(a.id)} style={{ background:"none",border:"none",color:"#f87171",cursor:"pointer" }}>🗑</button>
+                      {isAdmin && <button onClick={()=>del(a.id)} style={{ background:"none",border:"none",color:"#f87171",cursor:"pointer" }}>🗑</button>}
                     </Td>}
                   </tr>
                 );
@@ -544,7 +545,7 @@ const FbAccountsTab = ({ user, isAdmin }) => {
 };
 
 // ─── TEAM TAB (Admin only) ─────────────────────────────────────────────────
-const TeamTab = ({ currentUserId }) => {
+const TeamTab = ({ currentUserId, canChangeRoles }) => {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -579,9 +580,10 @@ const TeamTab = ({ currentUserId }) => {
                   <Td><Badge s={m.role} /></Td>
                   <Td style={{ color:"#64748b",fontSize:12 }}>{m.created_at?.slice(0,10)}</Td>
                   <Td>
-                    {m.id!==currentUserId&&(
+                    {m.id!==currentUserId && canChangeRoles &&(
                       <div style={{ display:"flex",gap:8 }}>
                         <button onClick={()=>setRole(m.id,"admin")} disabled={m.role==="admin"} style={{ ...S.btnGhost, padding:"4px 12px", fontSize:12, opacity:m.role==="admin"?0.4:1 }}>Адмін</button>
+                        <button onClick={()=>setRole(m.id,"teamlead")} disabled={m.role==="teamlead"} style={{ ...S.btnGhost, padding:"4px 12px", fontSize:12, opacity:m.role==="teamlead"?0.4:1 }}>Тім лід</button>
                         <button onClick={()=>setRole(m.id,"buyer")} disabled={m.role==="buyer"} style={{ ...S.btnGhost, padding:"4px 12px", fontSize:12, opacity:m.role==="buyer"?0.4:1 }}>Байєр</button>
                       </div>
                     )}
@@ -621,6 +623,8 @@ export default function App() {
 
   const user = session.user;
   const isAdmin = profile?.role === "admin";
+  const isTeamLead = profile?.role === "teamlead";
+  const canSeeAll = isAdmin || isTeamLead;
   const userName = profile?.full_name || user.email;
 
   const TABS = [
@@ -628,7 +632,7 @@ export default function App() {
     { id:"creatives", label:"🎨 Креативи" },
     { id:"stats",     label:"📊 Статистика" },
     { id:"accounts",  label:"📱 FB Акаунти" },
-    ...(isAdmin ? [{ id:"team", label:"👥 Команда" }] : []),
+    ...((isAdmin || isTeamLead) ? [{ id:"team", label:"👥 Команда" }] : []),
   ];
 
   return (
@@ -649,11 +653,11 @@ export default function App() {
       </div>
 
       <div style={{ padding:24, maxWidth:1600, margin:"0 auto" }}>
-        {tab==="domains"   && <DomainsTab   user={user} isAdmin={isAdmin} />}
-        {tab==="creatives" && <CreativesTab user={user} isAdmin={isAdmin} domains={domains} />}
+        {tab==="domains"   && <DomainsTab   user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
+        {tab==="creatives" && <CreativesTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} domains={domains} />}
         {tab==="stats"     && <StatsTab     domains={domains} />}
-        {tab==="accounts"  && <FbAccountsTab user={user} isAdmin={isAdmin} />}
-        {tab==="team"      && isAdmin && <TeamTab currentUserId={user.id} />}
+        {tab==="accounts"  && <FbAccountsTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
+        {tab==="team"      && (isAdmin || isTeamLead) && <TeamTab currentUserId={user.id} canChangeRoles={isAdmin} />}
       </div>
     </div>
   );
