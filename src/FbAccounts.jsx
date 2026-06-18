@@ -140,7 +140,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
       // 1. Отримати всі рекламні акаунти
       const adAccounts = await callFbApi(setup.token, "me/adaccounts", {
-        fields: "id,name,account_status,balance,spend_cap,currency,amount_spent,timezone_name",
+        fields: "id,name,account_status,balance,spend_cap,currency,amount_spent,timezone_name,timezone_offset_hours_utc",
         limit: "100"
       }, proxy);
 
@@ -170,13 +170,14 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
           buyer_id: setup.buyer_id,
           name: acc.name,
           status: statusMap[acc.account_status] || "живий",
-          balance: (parseFloat(acc.balance)||0) / 100,
-          spend_limit: (parseFloat(acc.spend_cap)||0) / 100,
+          balance: parseFloat(acc.balance)||0,
+          spend_limit: parseFloat(acc.spend_cap)||0,
           today_spend: parseFloat(acc.today_spend)||0,
           impressions: parseInt(acc.impressions)||0,
           clicks: parseInt(acc.clicks)||0,
           ctr: parseFloat(acc.ctr)||0,
           currency: acc.currency||"USD",
+          timezone: acc.timezone_name ? acc.timezone_name + (acc.timezone_offset_hours_utc !== undefined ? " (UTC" + (acc.timezone_offset_hours_utc >= 0 ? "+" : "") + acc.timezone_offset_hours_utc + ")" : "") : "",
         }, { onConflict: "fb_account_id" });
       }
 
@@ -238,7 +239,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
       {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:12, marginBottom:20 }}>
-        {[["Всього",stats.total,"#60a5fa"],["Живих",stats.alive,"#4ade80"],["На прогріві",stats.warm,"#fbbf24"],["Забанених",stats.banned,"#f87171"],["Витрати сьогодні",`$${stats.spend.toFixed(0)}}`,"#a78bfa"]].map(([l,v,c])=>(
+        {[["Всього",stats.total,"#60a5fa"],["Живих",stats.alive,"#4ade80"],["На прогріві",stats.warm,"#fbbf24"],["Забанених",stats.banned,"#f87171"],["Витрати сьогодні",`$${stats.spend.toFixed(0)}`,"#a78bfa"]].map(([l,v,c])=>(
           <div key={l} style={S.card}><div style={{ color:"#64748b",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em" }}>{l}</div><div style={{ color:c,fontSize:22,fontWeight:800,marginTop:4 }}>{v}</div></div>
         ))}
       </div>
