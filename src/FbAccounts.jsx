@@ -29,12 +29,24 @@ const Modal = ({ title, onClose, children }) => (
 );
 
 async function callFbApi(token, endpoint, params, proxy) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Немає активної сесії");
+
   const res = await fetch('/api/fb', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
     body: JSON.stringify({ token, endpoint, params, proxy })
   });
-  return res.json();
+
+  const data = await res.json();
+  if (!res.ok) {
+    const message = data?.error?.message || data?.error || `FB proxy error ${res.status}`;
+    throw new Error(message);
+  }
+  return data;
 }
 
 const STATUS_MAP = { 1:"живий", 2:"забанений", 3:"на прогріві", 7:"на прогріві", 8:"на прогріві", 9:"на прогріві", 100:"на прогріві", 101:"на прогріві", 201:"забанений" };
@@ -414,7 +426,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
       {/* Header */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
         <h3 style={{ color:"#e2e8f0", fontSize:16, fontWeight:700, margin:0 }}>ВАШІ СЕТАПИ</h3>
-        {(isAdmin||canSeeAll) && <button onClick={()=>setModal({mode:"add",data:{}})} style={S.btn}>+ Додати сетап</button>}
+        <button onClick={()=>setModal({mode:"add",data:{}})} style={S.btn}>+ Додати сетап</button>
       </div>
 
       {/* Setups */}
