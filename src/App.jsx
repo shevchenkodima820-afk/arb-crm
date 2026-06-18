@@ -222,25 +222,6 @@ const DomainsTab = ({ user, isAdmin, canSeeAll }) => {
       )}
       {modal && <Modal title={modal.mode==="add"?"Новий домен":"Редагувати"} onClose={()=>setModal(null)}><DomainForm initial={modal.data} onSave={handleSave} onClose={()=>setModal(null)} loading={saving} /></Modal>}
     </div>
-
-      {/* Profile Drawer */}
-      {profileOpen && (
-        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
-          {/* Overlay */}
-          <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
-          {/* Drawer */}
-          <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
-              <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
-              <button onClick={()=>setProfileOpen(false)} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer", lineHeight:1 }}>×</button>
-            </div>
-            <div style={{ padding:24, flex:1 }}>
-              <ProfileTab user={user} profile={profile} onProfileUpdate={(p)=>{ setProfile(p); }} />
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
   );
 };
 
@@ -633,10 +614,8 @@ export default function App() {
         {tab==="stats"     && <StatsTab     domains={domains} />}
         {tab==="accounts"  && <FbAccountsTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
         {tab==="team"      && (isAdmin || isTeamLead) && <TeamsTab currentUserId={user.id} isAdmin={isAdmin} />}
-        
       </div>
 
-      {/* Profile Drawer */}
       {profileOpen && (
         <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
           <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
