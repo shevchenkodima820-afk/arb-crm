@@ -106,25 +106,6 @@ const AuthPage = () => {
         <button onClick={submit} disabled={loading} style={{ ...S.btn, width:"100%", padding:"11px", opacity:loading?0.7:1 }}>{loading?"Завантаження…":mode==="login"?"Увійти":"Зареєструватись"}</button>
       </div>
     </div>
-
-      {/* Profile Drawer */}
-      {profileOpen && (
-        <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
-          {/* Overlay */}
-          <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
-          {/* Drawer */}
-          <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
-              <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
-              <button onClick={()=>setProfileOpen(false)} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer", lineHeight:1 }}>×</button>
-            </div>
-            <div style={{ padding:24, flex:1 }}>
-              <ProfileTab user={user} profile={profile} onProfileUpdate={(p)=>{ setProfile(p); }} />
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
   );
 };
 
@@ -149,14 +130,11 @@ const DomainForm = ({ initial={}, onSave, onClose, loading }) => {
         <button onClick={onClose} style={S.btnGhost}>Скасувати</button>
         <button onClick={() => onSave(f)} disabled={loading} style={{ ...S.btn, opacity:loading?0.7:1 }}>{loading?"…":"Зберегти"}</button>
       </div>
-    </div>
 
       {/* Profile Drawer */}
       {profileOpen && (
         <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
-          {/* Overlay */}
           <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
-          {/* Drawer */}
           <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
               <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
@@ -310,14 +288,11 @@ const CreativeForm = ({ initial={}, domains, onSave, onClose, loading, userId })
         <button onClick={onClose} style={S.btnGhost}>Скасувати</button>
         <button onClick={()=>onSave(f)} disabled={loading||uploading} style={{ ...S.btn, opacity:(loading||uploading)?0.7:1 }}>{loading?"…":"Зберегти"}</button>
       </div>
-    </div>
 
       {/* Profile Drawer */}
       {profileOpen && (
         <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
-          {/* Overlay */}
           <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
-          {/* Drawer */}
           <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
               <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
@@ -660,14 +635,11 @@ export default function App() {
         {tab==="team"      && (isAdmin || isTeamLead) && <TeamsTab currentUserId={user.id} isAdmin={isAdmin} />}
         
       </div>
-    </div>
 
       {/* Profile Drawer */}
       {profileOpen && (
         <div style={{ position:"fixed", inset:0, zIndex:200, display:"flex" }}>
-          {/* Overlay */}
           <div onClick={()=>setProfileOpen(false)} style={{ flex:1, background:"#000a" }} />
-          {/* Drawer */}
           <div style={{ width:"min(480px,100vw)", background:"#0b0d14", borderLeft:"1px solid #1e2330", overflowY:"auto", display:"flex", flexDirection:"column" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px", borderBottom:"1px solid #1e2330", background:"#0f1117" }}>
               <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:16 }}>⚙️ Профіль</span>
