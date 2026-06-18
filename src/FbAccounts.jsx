@@ -140,7 +140,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
       // 1. Отримати всі рекламні акаунти
       const adAccounts = await callFbApi(setup.token, "me/adaccounts", {
-        fields: "id,name,account_status,balance,spend_cap,currency,amount_spent",
+        fields: "id,name,account_status,balance,spend_cap,currency,amount_spent,timezone_name",
         limit: "100"
       }, proxy);
 
@@ -297,7 +297,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
             <table style={{ width:"100%", borderCollapse:"collapse", background:"#13151c", borderRadius:10, overflow:"hidden" }}>
               <thead>
                 <tr style={{ background:"#0f1117" }}>
-                  {["Account ID","Назва","Статус","Байєр","Баланс","Ліміт","Витрати сьогодні","Покази","Кліки","CTR","Валюта"].map(h=>(
+                  {["Account ID","Назва","Статус","Байєр","Баланс","Ліміт","Витрати сьогодні","Покази","Кліки","CTR","Валюта","Часовий пояс"].map(h=>(
                     <th key={h} style={{ padding:"10px 14px", textAlign:"left", color:"#64748b", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", borderBottom:"1px solid #1e2330", whiteSpace:"nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -317,6 +317,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
                     <td style={{ padding:"10px 14px", color:"#94a3b8", fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.clicks?Number(a.clicks).toLocaleString():"—"}</td>
                     <td style={{ padding:"10px 14px", color:"#fbbf24", fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.ctr?`${Number(a.ctr).toFixed(2)}%`:"—"}</td>
                     <td style={{ padding:"10px 14px", color:"#64748b", fontSize:12, borderBottom:"1px solid #1a1d23" }}>{a.currency||"USD"}</td>
+                    <td style={{ padding:"10px 14px", color:"#64748b", fontSize:11, borderBottom:"1px solid #1a1d23", whiteSpace:"nowrap" }}>{a.timezone||"—"}</td>
                   </tr>
                 ))}
               </tbody>
