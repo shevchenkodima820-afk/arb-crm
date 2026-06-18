@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import FbAccountsTab from "./FbAccounts";
+import TeamsTab from "./Teams";
 import { supabase } from "./supabase";
 
 const S = {
@@ -474,7 +475,7 @@ export default function App() {
 
   useEffect(()=>{
     if (!session) return;
-    supabase.from("profiles").select("*").eq("id",session.user.id).single().then(({ data })=>{ if(data) setProfile(data); });
+    supabase.from("profiles").select("*, teams(id, name)").eq("id",session.user.id).single().then(({ data })=>{ if(data) setProfile(data); });
     supabase.from("domains").select("*").order("created_at",{ascending:false}).then(({ data })=>{ if(data) setDomains(data); });
   },[session, tab]);
 
@@ -492,7 +493,7 @@ export default function App() {
     { id:"creatives", label:"🎨 Креативи" },
     { id:"stats",     label:"📊 Статистика" },
     { id:"accounts",  label:"📱 FB Акаунти" },
-    ...((isAdmin || isTeamLead) ? [{ id:"team", label:"👥 Команда" }] : []),
+    ...((isAdmin || isTeamLead) ? [{ id:"team", label:"👥 Команди" }] : []),
   ];
 
   return (
@@ -517,7 +518,7 @@ export default function App() {
         {tab==="creatives" && <CreativesTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} domains={domains} />}
         {tab==="stats"     && <StatsTab     domains={domains} />}
         {tab==="accounts"  && <FbAccountsTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
-        {tab==="team"      && (isAdmin || isTeamLead) && <TeamTab currentUserId={user.id} canChangeRoles={isAdmin} />}
+        {tab==="team"      && (isAdmin || isTeamLead) && <TeamsTab currentUserId={user.id} isAdmin={isAdmin} />}
       </div>
     </div>
   );
