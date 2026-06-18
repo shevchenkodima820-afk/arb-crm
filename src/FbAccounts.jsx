@@ -298,7 +298,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
             <table style={{ width:"100%", borderCollapse:"collapse", background:"#13151c", borderRadius:10, overflow:"hidden" }}>
               <thead>
                 <tr style={{ background:"#0f1117" }}>
-                  {["Account ID","Назва","Статус","Байєр","Баланс","Ліміт","Витрати сьогодні","Покази","Кліки","CTR","Валюта","Часовий пояс"].map(h=>(
+                  {["Account ID","Назва","Статус","Байєр","Витрачено всього","Ліміт","Залишок","Витрати сьогодні","Покази","Кліки","CTR","Валюта","Часовий пояс"].map(h=>(
                     <th key={h} style={{ padding:"10px 14px", textAlign:"left", color:"#64748b", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", borderBottom:"1px solid #1e2330", whiteSpace:"nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -311,8 +311,9 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
                     <td style={{ padding:"10px 14px", color:"#e2e8f0", fontWeight:600, fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.name||"—"}</td>
                     <td style={{ padding:"10px 14px", borderBottom:"1px solid #1a1d23" }}><Badge s={a.status} /></td>
                     <td style={{ padding:"10px 14px", color:"#cbd5e1", fontSize:13, borderBottom:"1px solid #1a1d23" }}>{getBuyer(a.buyer_id)?.full_name||"—"}</td>
-                    <td style={{ padding:"10px 14px", color:"#4ade80", fontWeight:600, fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.balance?`$${Number(a.balance).toFixed(0)}`:"—"}</td>
-                    <td style={{ padding:"10px 14px", color:"#a78bfa", fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.spend_limit?`$${Number(a.spend_limit).toFixed(0)}`:"—"}</td>
+                    <td style={{ padding:"10px 14px", color:"#f87171", fontWeight:600, fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.balance?`$${Number(a.balance).toFixed(2)}`:"—"}</td>
+                    <td style={{ padding:"10px 14px", color:"#a78bfa", fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.spend_limit?`$${Number(a.spend_limit).toFixed(2)}`:"—"}</td>
+                    <td style={{ padding:"10px 14px", color:"#4ade80", fontWeight:700, fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.spend_limit?`$${(Number(a.spend_limit)-Number(a.balance)).toFixed(2)}`:"—"}</td>
                     <td style={{ padding:"10px 14px", color:"#f87171", fontWeight:700, fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.today_spend?`$${Number(a.today_spend).toFixed(2)}`:"—"}</td>
                     <td style={{ padding:"10px 14px", color:"#94a3b8", fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.impressions?Number(a.impressions).toLocaleString():"—"}</td>
                     <td style={{ padding:"10px 14px", color:"#94a3b8", fontSize:13, borderBottom:"1px solid #1a1d23" }}>{a.clicks?Number(a.clicks).toLocaleString():"—"}</td>
