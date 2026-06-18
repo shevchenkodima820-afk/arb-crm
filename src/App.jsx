@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import FbAccountsTab from "./FbAccounts";
 import TeamsTab from "./Teams";
+import ProfileTab from "./Profile";
 import { supabase } from "./supabase";
 
 const S = {
@@ -493,6 +494,7 @@ export default function App() {
     { id:"creatives", label:"🎨 Креативи" },
     { id:"stats",     label:"📊 Статистика" },
     { id:"accounts",  label:"📱 FB Акаунти" },
+    { id:"profile", label:"⚙️ Профіль" },
     ...((isAdmin || isTeamLead) ? [{ id:"team", label:"👥 Команди" }] : []),
   ];
 
@@ -508,7 +510,11 @@ export default function App() {
         <div style={{ flex:1 }} />
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <Badge s={profile?.role||"buyer"} />
-          <span style={{ color:"#475569", fontSize:13 }}>👤 {userName}</span>
+          {profile?.avatar_url
+            ? <img src={profile.avatar_url} alt="" style={{ width:28,height:28,borderRadius:"50%",objectFit:"cover",border:"1px solid #2e3240" }} onError={e=>e.target.style.display="none"} />
+            : <div style={{ width:28,height:28,borderRadius:"50%",background:"#1e2330",display:"flex",alignItems:"center",justifyContent:"center",color:"#60a5fa",fontSize:11,fontWeight:800 }}>{userName?.[0]?.toUpperCase()}</div>
+          }
+          <span style={{ color:"#475569", fontSize:13 }}>{userName}</span>
           <button onClick={()=>supabase.auth.signOut()} style={{ ...S.btnGhost, padding:"6px 14px", fontSize:13 }}>Вийти</button>
         </div>
       </div>
@@ -519,6 +525,7 @@ export default function App() {
         {tab==="stats"     && <StatsTab     domains={domains} />}
         {tab==="accounts"  && <FbAccountsTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
         {tab==="team"      && (isAdmin || isTeamLead) && <TeamsTab currentUserId={user.id} isAdmin={isAdmin} />}
+        {tab==="profile"    && <ProfileTab user={user} profile={profile} onProfileUpdate={setProfile} />}
       </div>
     </div>
   );
