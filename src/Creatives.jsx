@@ -401,16 +401,16 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
       </div>
 
       {uploadOpen && (
-        <div style={{ position:"fixed", inset:0, zIndex:1000, background:"#fff", color:"#202124", overflowY:"auto" }}>
-          <button
-            onClick={closeUpload}
-            disabled={uploading}
-            style={{ position:"fixed", top:0, right:0, width:72, height:72, border:"3px solid #9ca3af", borderRadius:18, background:"#fff", color:"#202124", fontSize:42, lineHeight:1, cursor:uploading ? "not-allowed" : "pointer", zIndex:1001 }}
-            aria-label="Закрити"
-          >×</button>
+        <div style={{ position:"fixed", inset:0, zIndex:1000, background:"#0008", color:"#202124", display:"flex", alignItems:"flex-start", justifyContent:"center", overflowY:"auto", padding:"10px 24px 40px" }}>
+          <div style={{ position:"relative", width:"min(900px, calc(100vw - 48px))", background:"#fff", borderRadius:8, boxShadow:"0 24px 90px #0005", padding:"32px 32px 26px", marginTop:0 }}>
+            <button
+              onClick={closeUpload}
+              disabled={uploading}
+              style={{ position:"absolute", top:6, right:6, width:54, height:54, border:"2px solid #9ca3af", borderRadius:12, background:"#fff", color:"#202124", fontSize:32, lineHeight:1, cursor:uploading ? "not-allowed" : "pointer", zIndex:1001 }}
+              aria-label="Закрити"
+            >×</button>
 
-          <div style={{ padding:"42px 44px 48px", maxWidth:1240 }}>
-            <h1 style={{ margin:"0 0 56px", fontSize:32, lineHeight:1.15, fontWeight:900 }}>Завантаження креативів</h1>
+            <h1 style={{ margin:"4px 0 28px", fontSize:24, lineHeight:1.15, fontWeight:900 }}>Завантаження креативів</h1>
 
             <div
               onClick={()=>fileRef.current?.click()}
@@ -418,12 +418,12 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
               onDragOver={e=>{ e.preventDefault(); setDragOver(true); }}
               onDragLeave={e=>{ e.preventDefault(); setDragOver(false); }}
               onDrop={e=>{ e.preventDefault(); setDragOver(false); addUploadFiles(e.dataTransfer.files); }}
-              style={{ height:430, border:`3px dashed ${dragOver ? "#60a5fa" : "#93c5fd"}`, borderRadius:12, background:dragOver ? "#dbeafe" : "#eff6ff", display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", cursor:"pointer", userSelect:"none" }}
+              style={{ height:270, border:`2px dashed ${dragOver ? "#60a5fa" : "#d1d5db"}`, borderRadius:12, background:dragOver ? "#f8fafc" : "#fff", display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", cursor:"pointer", userSelect:"none" }}
             >
               <input ref={fileRef} type="file" multiple accept="image/*,video/*" style={{ display:"none" }} onChange={e=>addUploadFiles(e.target.files)} />
-              <div style={{ color:"#9ca3af", fontSize:64, lineHeight:1, marginBottom:36 }}>☁</div>
-              <div style={{ color:"#4b5563", fontSize:26, fontWeight:500, marginBottom:24 }}>Перетягніть файли сюди</div>
-              <div style={{ color:"#9ca3af", fontSize:26 }}>або натисніть для вибору</div>
+              <div style={{ color:"#9ca3af", fontSize:44, lineHeight:1, marginBottom:22 }}>☁</div>
+              <div style={{ color:"#4b5563", fontSize:17, fontWeight:700, marginBottom:18 }}>Перетягніть файли сюди</div>
+              <div style={{ color:"#9ca3af", fontSize:17 }}>або натисніть для вибору</div>
               {uploadFiles.length > 0 && (
                 <div style={{ marginTop:28, background:"#fff", border:"1px solid #dbeafe", borderRadius:12, padding:"10px 16px", color:"#1d4ed8", fontSize:16, fontWeight:800 }}>
                   Обрано файлів: {uploadFiles.length}
@@ -444,9 +444,9 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
               </div>
             )}
 
-            <div style={{ marginTop:36 }}>
-              <div style={{ color:"#6b7280", fontWeight:900, fontSize:20, marginBottom:18 }}>Папка</div>
-              <div style={{ border:"1px solid #d1d5db", borderRadius:8, overflow:"hidden", maxHeight:365, overflowY:"auto" }}>
+            <div style={{ marginTop:22 }}>
+              <div style={{ color:"#6b7280", fontWeight:900, fontSize:15, marginBottom:10 }}>Папка</div>
+              <div style={{ border:"1px solid #d1d5db", borderRadius:8, overflow:"hidden", maxHeight:245, overflowY:"auto" }}>
                 {folderCards.map(folder => {
                   const selected = uploadFolderKey === folder.key;
                   const isUnsorted = folder.name === "Unsorted";
@@ -454,9 +454,9 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
                     <button
                       key={folder.key}
                       onClick={()=>selectUploadFolder(folder)}
-                      style={{ width:"100%", border:"none", background:selected ? "#eff6ff" : "#fff", display:"flex", alignItems:"center", gap:12, padding:"14px 56px", color:selected ? "#1e40af" : "#3f3f46", fontSize:24, fontWeight:selected ? 900 : 500, cursor:"pointer", textAlign:"left" }}
+                      style={{ width:"100%", border:"none", background:selected ? "#eff6ff" : "#fff", display:"flex", alignItems:"center", gap:12, padding:"9px 34px", color:selected ? "#1e40af" : "#3f3f46", fontSize:16, fontWeight:selected ? 900 : 500, cursor:"pointer", textAlign:"left" }}
                     >
-                      <span style={{ color:"#f4b400", fontSize:24 }}>{isUnsorted ? "🗂" : "📁"}</span>
+                      <span style={{ color:"#f4b400", fontSize:18 }}>{isUnsorted ? "🗂" : "📁"}</span>
                       <span>{isUnsorted ? "Без вказівки (Unsorted)" : folder.name}</span>
                     </button>
                   );
@@ -464,21 +464,21 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
               </div>
             </div>
 
-            <div style={{ marginTop:36 }}>
-              <div style={{ color:"#6b7280", fontWeight:900, fontSize:20, marginBottom:18 }}>Теги (необов'язково)</div>
+            <div style={{ marginTop:22 }}>
+              <div style={{ color:"#6b7280", fontWeight:900, fontSize:15, marginBottom:10 }}>Теги (необов'язково)</div>
               <input
-                style={{ width:"100%", boxSizing:"border-box", border:"1px solid #d1d5db", borderRadius:8, padding:"18px 22px", fontSize:26, color:"#3f3f46", outline:"none" }}
+                style={{ width:"100%", boxSizing:"border-box", border:"1px solid #d1d5db", borderRadius:8, padding:"12px 16px", fontSize:17, color:"#3f3f46", outline:"none" }}
                 value={uploadTags}
                 onChange={e=>setUploadTags(e.target.value)}
                 placeholder="Додати тег..."
               />
             </div>
 
-            <div style={{ display:"flex", justifyContent:"flex-end", marginTop:56 }}>
+            <div style={{ display:"flex", justifyContent:"flex-end", marginTop:30 }}>
               <button
                 onClick={saveCreative}
                 disabled={uploading || uploadFiles.length === 0}
-                style={{ border:"none", borderRadius:12, background:uploading || uploadFiles.length === 0 ? "#93aef5" : "#2563eb", color:"#fff", fontSize:26, fontWeight:900, padding:"24px 42px", cursor:uploading || uploadFiles.length === 0 ? "not-allowed" : "pointer", minWidth:240 }}
+                style={{ border:"none", borderRadius:12, background:uploading || uploadFiles.length === 0 ? "#93aef5" : "#2563eb", color:"#fff", fontSize:18, fontWeight:900, padding:"16px 30px", cursor:uploading || uploadFiles.length === 0 ? "not-allowed" : "pointer", minWidth:180 }}
               >
                 {uploading ? "Завантажую…" : "Завантажити"}
               </button>
