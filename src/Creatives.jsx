@@ -82,46 +82,6 @@ function detectType(url = "", file) {
   return "photo";
 }
 
-
-async function copyCreativeToGoogleDrive({ fileUrl, originalName, creativeName, folderName, tags, crmCreativeId, mimeType }) {
-  const payload = { fileUrl, originalName, creativeName, folderName, tags, crmCreativeId, mimeType };
-
-  async function getFreshSession() {
-    let { data: { session } } = await supabase.auth.getSession();
-    const expiresAtMs = session?.expires_at ? session.expires_at * 1000 : 0;
-    if (!session?.access_token || (expiresAtMs && expiresAtMs < Date.now() + 60000)) {
-      const refreshed = await supabase.auth.refreshSession();
-      session = refreshed.data?.session || session;
-    }
-    if (!session?.access_token) throw new Error("Немає активної сесії. Перелогінься в CRM.");
-    return session;
-  }
-
-  async function postWithSession(session) {
-    const res = await fetch("/api/google-drive-upload", {
-      method:"POST",
-      headers:{
-        "Content-Type":"application/json",
-        Authorization:`Bearer ${session.access_token}`,
-      },
-      body:JSON.stringify(payload),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(data?.error || `Google Drive upload error ${res.status}`), { status:res.status });
-    return data;
-  }
-
-  try {
-    return await postWithSession(await getFreshSession());
-  } catch (e) {
-    if (e.status !== 401) throw e;
-    const refreshed = await supabase.auth.refreshSession();
-    const session = refreshed.data?.session;
-    if (!session?.access_token) throw new Error("Сесія CRM застаріла. Вийди і зайди знову.");
-    return postWithSession(session);
-  }
-}
-
 function defaultFolderName(row) {
   return row.folder_name || row.buyer || "Unsorted";
 }
@@ -310,9 +270,8 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
       });
     }
 
-    let inserted = [];
-    let { data:insertedData, error } = await supabase.from("creatives").insert(payloads).select();
-    if (error && /folder_id|media_type|orientation|duration_bucket|archived|launched_count|tags|google_drive/i.test(error.message)) {
+    let { error } = await supabase.from("creatives").insert(payloads);
+    if (error && /folder_id|media_type|orientation|duration_bucket|archived|launched_count|tags/i.test(error.message)) {
       const fallback = payloads.map(payload => {
         const copy = { ...payload };
         delete copy.folder_id;
@@ -322,54 +281,18 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
         delete copy.archived;
         delete copy.launched_count;
         delete copy.tags;
-        delete copy.google_drive_file_id;
-        delete copy.google_drive_web_url;
-        delete copy.google_drive_folder_id;
         return copy;
       });
-      ({ data:insertedData, error } = await supabase.from("creatives").insert(fallback).select());
-    }
-    inserted = insertedData || [];
-
-    if (error) {
-      setUploading(false);
-      showToast("Помилка збереження: " + error.message, "error");
-      return;
-    }
-
-    let driveUploaded = 0;
-    let driveFailed = 0;
-    const driveErrors = [];
-    const driveFolderName = selectedUploadFolder?.name || "Unsorted";
-
-    for (const creative of inserted) {
-      try {
-        const drive = await copyCreativeToGoogleDrive({
-          fileUrl:creative.preview_url,
-          originalName:creative.name,
-          creativeName:creative.name,
-          folderName:driveFolderName,
-          tags,
-          crmCreativeId:creative.id,
-          mimeType:creative.media_type === "video" ? "video/mp4" : undefined,
-        });
-        driveUploaded += 1;
-        await supabase.from("creatives").update({
-          google_drive_file_id:drive.fileId,
-          google_drive_web_url:drive.webViewLink,
-          google_drive_folder_id:drive.folderId,
-        }).eq("id", creative.id);
-      } catch (driveError) {
-        driveFailed += 1;
-        driveErrors.push(driveError.message || String(driveError));
-        try { await supabase.from("creatives").update({ google_drive_error:driveError.message }).eq("id", creative.id); } catch {}
-      }
+      ({ error } = await supabase.from("creatives").insert(fallback));
     }
 
     setUploading(false);
-    showToast(driveFailed ? `Завантажено ${payloads.length}. Drive помилка [drive-oauth-noauth-v4]: ${driveErrors[0] || `${driveFailed} помилок`}` : `Завантажено ${payloads.length} і скопійовано в Google Drive`, driveFailed ? "error" : "ok");
-    closeUpload();
-    fetchData();
+    if (error) showToast("Помилка збереження: " + error.message, "error");
+    else {
+      showToast(`Завантажено ${payloads.length} креативів`);
+      closeUpload();
+      fetchData();
+    }
   };
 
   const archiveCreative = async (creative) => {
@@ -458,7 +381,6 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
                         <div style={{ color:"#9ca3af", fontSize:12, marginTop:4 }}>{mediaType} · {c.added_date || c.created_at?.slice(0,10) || "—"}</div>
                         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:10 }}>
                           <span style={{ color:c.status === "активний" ? "#16a34a" : "#6b7280", fontSize:12, fontWeight:800 }}>{c.status}</span>
-                          {c.google_drive_web_url && <a href={c.google_drive_web_url} target="_blank" rel="noreferrer" style={{ color:"#2563eb", fontSize:12, fontWeight:900, textDecoration:"none" }}>Drive</a>}
                           <button onClick={()=>archiveCreative(c)} style={{ border:"none", background:"transparent", cursor:"pointer", color:"#6b7280" }}>{c.archived ? "↩" : "Архів"}</button>
                         </div>
                       </div>
@@ -468,7 +390,6 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
                       <div style={{ width:54, height:54, borderRadius:8, overflow:"hidden", background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center" }}>{c.preview_url ? <img src={c.preview_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : "🖼"}</div>
                       <div style={{ fontWeight:900 }}>{c.name}</div>
                       <div style={{ color:"#9ca3af" }}>{mediaType}</div>
-                      {c.google_drive_web_url && <a href={c.google_drive_web_url} target="_blank" rel="noreferrer" style={{ color:"#2563eb", fontWeight:900, textDecoration:"none" }}>Drive</a>}
                       <div style={{ marginLeft:"auto", color:"#9ca3af" }}>{c.added_date || c.created_at?.slice(0,10)}</div>
                     </div>
                   );
