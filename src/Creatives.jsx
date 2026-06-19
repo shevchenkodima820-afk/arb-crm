@@ -84,20 +84,42 @@ function detectType(url = "", file) {
 
 
 async function copyCreativeToGoogleDrive({ fileUrl, originalName, creativeName, folderName, tags, crmCreativeId, mimeType }) {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error("Немає активної сесії");
+  const payload = { fileUrl, originalName, creativeName, folderName, tags, crmCreativeId, mimeType };
 
-  const res = await fetch("/api/google-drive-upload", {
-    method:"POST",
-    headers:{
-      "Content-Type":"application/json",
-      Authorization:`Bearer ${session.access_token}`,
-    },
-    body:JSON.stringify({ fileUrl, originalName, creativeName, folderName, tags, crmCreativeId, mimeType }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || `Google Drive upload error ${res.status}`);
-  return data;
+  async function getFreshSession() {
+    let { data: { session } } = await supabase.auth.getSession();
+    const expiresAtMs = session?.expires_at ? session.expires_at * 1000 : 0;
+    if (!session?.access_token || (expiresAtMs && expiresAtMs < Date.now() + 60000)) {
+      const refreshed = await supabase.auth.refreshSession();
+      session = refreshed.data?.session || session;
+    }
+    if (!session?.access_token) throw new Error("Немає активної сесії. Перелогінься в CRM.");
+    return session;
+  }
+
+  async function postWithSession(session) {
+    const res = await fetch("/api/google-drive-upload", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        Authorization:`Bearer ${session.access_token}`,
+      },
+      body:JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data?.error || `Google Drive upload error ${res.status}`), { status:res.status });
+    return data;
+  }
+
+  try {
+    return await postWithSession(await getFreshSession());
+  } catch (e) {
+    if (e.status !== 401) throw e;
+    const refreshed = await supabase.auth.refreshSession();
+    const session = refreshed.data?.session;
+    if (!session?.access_token) throw new Error("Сесія CRM застаріла. Вийди і зайди знову.");
+    return postWithSession(session);
+  }
 }
 
 function defaultFolderName(row) {

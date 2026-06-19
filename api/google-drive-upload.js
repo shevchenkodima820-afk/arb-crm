@@ -41,7 +41,11 @@ function normalizePrivateKey(key) {
 
 async function verifySupabaseJwt(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const err = new Error('Unauthorized: missing Supabase bearer token. Re-login in CRM.');
+    err.statusCode = 401;
+    throw err;
+  }
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = process.env.VITE_SUPABASE_KEY;
@@ -53,7 +57,11 @@ async function verifySupabaseJwt(req) {
     headers: { apikey: supabaseAnonKey, Authorization: authHeader },
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    const err = new Error(`Unauthorized: Supabase rejected session token (${response.status}). Re-login in CRM.`);
+    err.statusCode = 401;
+    throw err;
+  }
   return response.json();
 }
 
@@ -211,7 +219,6 @@ export default async function handler(req, res) {
 
   try {
     const user = await verifySupabaseJwt(req);
-    if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
     const {
       fileUrl,
@@ -268,6 +275,6 @@ export default async function handler(req, res) {
       authMode,
     });
   } catch (e) {
-    return res.status(400).json({ error: e.message });
+    return res.status(e.statusCode || 400).json({ error: e.message });
   }
 }
