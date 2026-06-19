@@ -545,6 +545,7 @@ const SetupCard = ({ setup, buyers, isAdmin, onEdit, onDelete, onRefresh }) => {
 
 const FARM_STATUS = {
   new: "новий",
+  checking: "на чеку",
   ready: "готовий",
   warming: "прогрів",
   banned: "бан",
@@ -552,16 +553,32 @@ const FARM_STATUS = {
 };
 const FARM_STATUS_COLOR = {
   new: "#60a5fa",
+  checking: "#fbbf24",
   ready: "#4ade80",
   warming: "#fbbf24",
   banned: "#f87171",
   issue: "#fb7185",
+};
+const FARM_ACCOUNT_STATUS = {
+  alive: "живий",
+  checking: "чек",
+  warming: "прогрів",
+  banned: "бан",
+  unknown: "невідомо",
+};
+const FARM_ACCOUNT_COLOR = {
+  alive: "#4ade80",
+  checking: "#fbbf24",
+  warming: "#fbbf24",
+  banned: "#f87171",
+  unknown: "#64748b",
 };
 
 const emptyFarm = {
   name:"",
   buyer_id:"",
   cookie_data:"",
+  access_token:"",
   status:"new",
   proxy_type:"socks5",
   proxy_host:"",
@@ -582,6 +599,17 @@ function proxyLabel(row) {
   if (!row?.proxy_host) return "Без проксі";
   const auth = row.proxy_user ? `${row.proxy_user}:***@` : "";
   return `${row.proxy_type || "socks5"}://${auth}${row.proxy_host}${row.proxy_port ? `:${row.proxy_port}` : ""}`;
+}
+
+function farmProxy(row) {
+  if (!row?.proxy_host) return null;
+  return {
+    type: row.proxy_type || "socks5",
+    host: row.proxy_host,
+    port: row.proxy_port,
+    user: row.proxy_user,
+    pass: row.proxy_pass,
+  };
 }
 
 function parseProxyString(raw = "") {
@@ -611,12 +639,21 @@ function parseProxyString(raw = "") {
   return { proxy_host:value, proxy_type:"socks5" };
 }
 
+function mapFbAdAccountStatus(accountStatus) {
+  const code = Number(accountStatus);
+  if (code === 1) return "alive";
+  if ([2, 101, 201].includes(code)) return "banned";
+  if ([3, 7, 8, 9, 100].includes(code)) return "warming";
+  return "unknown";
+}
+
 const FarmForm = ({ initial={}, buyers, onSave, onClose }) => {
   const editing = Boolean(initial.id);
   const [f, setF] = useState({
     ...emptyFarm,
     ...initial,
     cookie_data: editing ? "" : (initial.cookie_data || ""),
+    access_token: editing ? "" : (initial.access_token || ""),
   });
   const set = k => e => setF(p=>({...p,[k]:e.target.value}));
   const applyProxyRaw = () => {
@@ -627,11 +664,11 @@ const FarmForm = ({ initial={}, buyers, onSave, onClose }) => {
   return (
     <div>
       <div style={{ background:"#0f1117", border:"1px solid #1e2330", borderRadius:10, padding:12, color:"#94a3b8", fontSize:12, marginBottom:14 }}>
-        Cookie — це credential. Зберігай тільки власні/дозволені акаунти. У CRM cookie використовується як запис, без автоматичного логіну в Facebook.
+        Cookie зберігається як обліковий запис у CRM. Авточек кабінетів працює тільки через офіційний Meta access token, якщо ти його додаси.
       </div>
 
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-        <Field label="Назва фарму"><input style={S.inp} value={f.name} onChange={set("name")} placeholder="FARM-001" /></Field>
+        <Field label="Назва фарму"><input style={S.inp} value={f.name} onChange={set("name")} placeholder="DS-A2-Setup1-1" /></Field>
         <Field label="Байєр">
           <select style={{ ...S.inp, cursor:"pointer" }} value={f.buyer_id || ""} onChange={set("buyer_id")}>
             <option value="">— не призначено —</option>
@@ -653,10 +690,19 @@ const FarmForm = ({ initial={}, buyers, onSave, onClose }) => {
 
       <Field label={editing ? "Cookie / JSON cookie optional" : "Cookie / JSON cookie"}>
         <textarea
-          style={{ ...S.inp, minHeight:120, resize:"vertical", fontFamily:"monospace", fontSize:12 }}
+          style={{ ...S.inp, minHeight:110, resize:"vertical", fontFamily:"monospace", fontSize:12 }}
           value={f.cookie_data || ""}
           onChange={set("cookie_data")}
           placeholder={editing ? "Залиш пустим, якщо cookie не змінюється" : "Встав cookie рядок або JSON cookies"}
+        />
+      </Field>
+
+      <Field label={editing ? "Meta Access Token optional для авточеку" : "Meta Access Token optional для авточеку"}>
+        <input
+          style={S.inp}
+          value={f.access_token || ""}
+          onChange={set("access_token")}
+          placeholder={editing ? "Залиш пустим, якщо token не змінюється" : "EAA..."}
         />
       </Field>
 
@@ -679,6 +725,43 @@ const FarmForm = ({ initial={}, buyers, onSave, onClose }) => {
         <button onClick={()=>onSave(f)} style={S.btn}>{editing ? "Зберегти" : "Додати фарм"}</button>
       </div>
     </div>
+  );
+};
+
+const FarmAccountImport = ({ farm, onClose, onSave }) => {
+  const [raw, setRaw] = useState("");
+  const [status, setStatus] = useState("unknown");
+
+  const submit = () => {
+    const rows = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map((line, idx) => {
+      const parts = line.split("|").map(p => p.trim());
+      return {
+        fb_account_id: parts[0] || `manual-${idx + 1}`,
+        name: parts[1] || parts[0] || `Кабінет ${idx + 1}`,
+        status: parts[2] || status,
+      };
+    });
+    onSave(rows);
+  };
+
+  return (
+    <Modal title={`Додати кабінети · ${farm.name}`} onClose={onClose}>
+      <div style={{ background:"#0f1117", border:"1px solid #1e2330", borderRadius:10, padding:12, color:"#94a3b8", fontSize:12, marginBottom:14 }}>
+        Формат: <code>account_id|name|status</code>. Status: <code>alive</code>, <code>banned</code>, <code>warming</code>, <code>checking</code>, <code>unknown</code>.
+      </div>
+      <Field label="Статус за замовчуванням">
+        <select style={{ ...S.inp, cursor:"pointer" }} value={status} onChange={e=>setStatus(e.target.value)}>
+          {Object.entries(FARM_ACCOUNT_STATUS).map(([key,label]) => <option key={key} value={key}>{label}</option>)}
+        </select>
+      </Field>
+      <Field label="Кабінети">
+        <textarea style={{ ...S.inp, minHeight:220, resize:"vertical", fontFamily:"monospace", fontSize:12 }} value={raw} onChange={e=>setRaw(e.target.value)} placeholder={"act_123|BM Main|alive\nact_456|Spend cap|banned"} />
+      </Field>
+      <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+        <button onClick={onClose} style={S.btnGhost}>Скасувати</button>
+        <button onClick={submit} style={S.btn}>Зберегти кабінети</button>
+      </div>
+    </Modal>
   );
 };
 
@@ -765,35 +848,98 @@ const BulkFarmImport = ({ buyers, user, onClose, onDone, showToast }) => {
   );
 };
 
-const FarmRow = ({ farm, buyers, isAdmin, onEdit, onDelete }) => {
-  const buyer = buyers.find(b => b.id === farm.buyer_id);
-  const statusKey = farm.status || "new";
+const FarmAccountsTable = ({ accounts }) => {
+  if (!accounts.length) {
+    return <div style={{ color:"#64748b", padding:18, textAlign:"center", border:"1px dashed #1e2330", borderRadius:10 }}>Кабінети ще не додані. Натисни “Чек” або “+ Кабінети”.</div>;
+  }
   return (
-    <div style={{ border:"1px solid #1e2330", borderRadius:12, background:"#13151c", padding:16, display:"grid", gridTemplateColumns:"1fr auto", gap:14, alignItems:"center" }}>
-      <div style={{ minWidth:0 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-          <span style={{ width:9, height:9, borderRadius:"50%", background:FARM_STATUS_COLOR[statusKey] || "#64748b", display:"inline-block" }} />
-          <div style={{ color:"#e2e8f0", fontWeight:800, fontSize:15, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{farm.name || "FARM"}</div>
-          <span style={{ color:FARM_STATUS_COLOR[statusKey] || "#64748b", background:"#0f1117", border:"1px solid #1e2330", borderRadius:999, padding:"2px 8px", fontSize:11, fontWeight:800 }}>{FARM_STATUS[statusKey] || statusKey}</span>
-        </div>
-        <div style={{ color:"#64748b", fontSize:12, display:"flex", gap:12, flexWrap:"wrap" }}>
-          <span>👤 {buyer?.full_name || "не призначено"}</span>
-          <span>🍪 {maskSecret(farm.cookie_data)}</span>
-          <span>🔒 {proxyLabel(farm)}</span>
-          {farm.notes && <span>📝 {farm.notes}</span>}
-        </div>
-      </div>
-      <div style={{ display:"flex", gap:8 }}>
-        {isAdmin && <button onClick={onEdit} style={{ ...S.btnGhost, padding:"7px 10px" }}>✏️</button>}
-        {isAdmin && <button onClick={onDelete} style={{ ...S.btnGhost, padding:"7px 10px", color:"#f87171" }}>🗑</button>}
-      </div>
+    <div style={{ border:"1px solid #1e2330", borderRadius:10, overflow:"hidden" }}>
+      <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <thead>
+          <tr style={{ background:"#0f1117" }}>
+            <th style={{ padding:"9px 12px", textAlign:"left", color:"#64748b", fontSize:11, textTransform:"uppercase" }}>Кабінет</th>
+            <th style={{ padding:"9px 12px", textAlign:"left", color:"#64748b", fontSize:11, textTransform:"uppercase" }}>Статус</th>
+            <th style={{ padding:"9px 12px", textAlign:"right", color:"#64748b", fontSize:11, textTransform:"uppercase" }}>Spend cap</th>
+            <th style={{ padding:"9px 12px", textAlign:"right", color:"#64748b", fontSize:11, textTransform:"uppercase" }}>Перевірка</th>
+          </tr>
+        </thead>
+        <tbody>
+          {accounts.map(acc => {
+            const color = FARM_ACCOUNT_COLOR[acc.status] || "#64748b";
+            const isBanned = acc.status === "banned";
+            return (
+              <tr key={acc.id || acc.fb_account_id} style={{ background:isBanned ? "#7f1d1d33" : "transparent" }}>
+                <td style={{ padding:"10px 12px", borderTop:"1px solid #1a1d23" }}>
+                  <div style={{ color:isBanned ? "#fecaca" : "#e2e8f0", fontWeight:800 }}>{acc.name || "Ad account"}</div>
+                  <div style={{ color:"#64748b", fontSize:11, fontFamily:"monospace" }}>{acc.fb_account_id}</div>
+                  {acc.raw?.disable_reason && <div style={{ color:"#fca5a5", fontSize:11 }}>Reason: {acc.raw.disable_reason}</div>}
+                </td>
+                <td style={{ padding:"10px 12px", borderTop:"1px solid #1a1d23" }}>
+                  <span style={{ background:`${color}22`, color, border:`1px solid ${color}66`, borderRadius:999, padding:"3px 9px", fontSize:12, fontWeight:900 }}>{FARM_ACCOUNT_STATUS[acc.status] || acc.status}</span>
+                </td>
+                <td style={{ padding:"10px 12px", textAlign:"right", borderTop:"1px solid #1a1d23", color:"#94a3b8", fontSize:12 }}>{acc.spend_cap ? `$${Number(acc.spend_cap).toFixed(2)}` : "—"}</td>
+                <td style={{ padding:"10px 12px", textAlign:"right", borderTop:"1px solid #1a1d23", color:"#64748b", fontSize:12 }}>{acc.checked_at ? new Date(acc.checked_at).toLocaleString("uk-UA") : "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 };
 
-const FarmsPanel = ({ farms, buyers, user, isAdmin, onRefresh, showToast }) => {
+const FarmRow = ({ farm, farmAccounts, buyers, isAdmin, onEdit, onDelete, onCheck, onImportAccounts, checking }) => {
+  const [expanded, setExpanded] = useState(false);
+  const buyer = buyers.find(b => b.id === farm.buyer_id);
+  const statusKey = farm.status || "new";
+  const accounts = farmAccounts.filter(a => a.farm_id === farm.id);
+  const bannedCount = accounts.filter(a => a.status === "banned").length;
+  const aliveCount = accounts.filter(a => a.status === "alive").length;
+  const borderColor = statusKey === "banned" || bannedCount > 0 ? "#7f1d1d" : statusKey === "checking" ? "#854d0e" : "#1e2330";
+
+  return (
+    <div style={{ border:`1px solid ${borderColor}`, borderRadius:12, background:"#13151c", overflow:"hidden" }}>
+      <div onClick={()=>setExpanded(v=>!v)} style={{ padding:16, display:"grid", gridTemplateColumns:"1fr auto", gap:14, alignItems:"center", cursor:"pointer" }}>
+        <div style={{ minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+            <span style={{ width:9, height:9, borderRadius:"50%", background:FARM_STATUS_COLOR[statusKey] || "#64748b", display:"inline-block" }} />
+            <div style={{ color:"#e2e8f0", fontWeight:800, fontSize:15, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{farm.name || "FARM"}</div>
+            <span style={{ color:FARM_STATUS_COLOR[statusKey] || "#64748b", background:"#0f1117", border:"1px solid #1e2330", borderRadius:999, padding:"2px 8px", fontSize:11, fontWeight:800 }}>{FARM_STATUS[statusKey] || statusKey}</span>
+            {bannedCount > 0 && <span style={{ color:"#fecaca", background:"#7f1d1d66", borderRadius:999, padding:"2px 8px", fontSize:11, fontWeight:900 }}>бан кабів: {bannedCount}</span>}
+          </div>
+          <div style={{ color:"#64748b", fontSize:12, display:"flex", gap:12, flexWrap:"wrap" }}>
+            <span>👤 {buyer?.full_name || "не призначено"}</span>
+            <span>🍪 {maskSecret(farm.cookie_data)}</span>
+            <span>🔑 {farm.access_token ? "token є" : "без token"}</span>
+            <span>🔒 {proxyLabel(farm)}</span>
+            <span>📊 {accounts.length} каб. / 🟢 {aliveCount} / 🔴 {bannedCount}</span>
+            {farm.last_check_at && <span>🕒 {new Date(farm.last_check_at).toLocaleString("uk-UA")}</span>}
+          </div>
+          {farm.check_error && <div style={{ marginTop:7, color:"#fca5a5", fontSize:12 }}>⚠️ {farm.check_error}</div>}
+          {farm.notes && <div style={{ marginTop:5, color:"#64748b", fontSize:12 }}>📝 {farm.notes}</div>}
+        </div>
+        <div style={{ display:"flex", gap:8 }} onClick={e=>e.stopPropagation()}>
+          <button onClick={()=>onCheck(farm)} disabled={checking} style={{ ...S.btnGreen, padding:"7px 10px", opacity:checking ? 0.65 : 1 }}>{checking ? "чекаю…" : "🔍 Чек"}</button>
+          {isAdmin && <button onClick={()=>onImportAccounts(farm)} style={{ ...S.btnGhost, padding:"7px 10px" }}>+ Кабінети</button>}
+          {isAdmin && <button onClick={onEdit} style={{ ...S.btnGhost, padding:"7px 10px" }}>✏️</button>}
+          {isAdmin && <button onClick={onDelete} style={{ ...S.btnGhost, padding:"7px 10px", color:"#f87171" }}>🗑</button>}
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ background:"#0f1117", padding:16, borderTop:"1px solid #1e2330" }}>
+          <FarmAccountsTable accounts={accounts} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+const FarmsPanel = ({ farms, farmAccounts, buyers, user, isAdmin, onRefresh, showToast }) => {
   const [modal, setModal] = useState(null);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [accountImportFarm, setAccountImportFarm] = useState(null);
+  const [checkingId, setCheckingId] = useState(null);
   const [q, setQ] = useState("");
 
   const filtered = farms.filter(f => {
@@ -804,9 +950,9 @@ const FarmsPanel = ({ farms, buyers, user, isAdmin, onRefresh, showToast }) => {
   const stats = {
     total: farms.length,
     ready: farms.filter(f=>f.status === "ready").length,
-    warming: farms.filter(f=>f.status === "warming").length,
+    checking: farms.filter(f=>f.status === "checking").length,
     banned: farms.filter(f=>f.status === "banned").length,
-    noProxy: farms.filter(f=>!f.proxy_host).length,
+    bannedAccounts: farmAccounts.filter(a=>a.status === "banned").length,
   };
 
   const saveFarm = async (f) => {
@@ -824,6 +970,7 @@ const FarmsPanel = ({ farms, buyers, user, isAdmin, onRefresh, showToast }) => {
       user_id:user.id,
     };
     if (f.cookie_data?.trim()) payload.cookie_data = f.cookie_data.trim();
+    if (f.access_token?.trim()) payload.access_token = f.access_token.trim();
     if (!modal?.data?.id && !payload.cookie_data) { showToast("Для нового фарму потрібен cookie", "error"); return; }
 
     let error;
@@ -838,16 +985,96 @@ const FarmsPanel = ({ farms, buyers, user, isAdmin, onRefresh, showToast }) => {
   const deleteFarm = async (farm) => {
     if (!isAdmin) return;
     if (!confirm(`Видалити фарм "${farm.name || "FARM"}"?`)) return;
+    await supabase.from("fb_farm_accounts").delete().eq("farm_id", farm.id);
     const { error } = await supabase.from("fb_farms").delete().eq("id", farm.id);
     if (error) { showToast("Помилка видалення: " + error.message, "error"); return; }
     showToast("Фарм видалено");
     onRefresh();
   };
 
+  const importFarmAccounts = async (farm, rows) => {
+    if (!isAdmin) return;
+    const payloads = rows.map(row => ({
+      farm_id:farm.id,
+      user_id:user.id,
+      fb_account_id:row.fb_account_id,
+      name:row.name || row.fb_account_id,
+      status:row.status || "unknown",
+      checked_at:new Date().toISOString(),
+      raw:{ source:"manual" },
+    }));
+    const { error } = await supabase.from("fb_farm_accounts").upsert(payloads, { onConflict:"farm_id,fb_account_id" });
+    if (error) { showToast("Помилка імпорту кабінетів: " + error.message, "error"); return; }
+    showToast(`Додано/оновлено ${payloads.length} кабінетів`);
+    setAccountImportFarm(null);
+    onRefresh();
+  };
+
+  const checkFarm = async (farm) => {
+    setCheckingId(farm.id);
+    await supabase.from("fb_farms").update({ status:"checking", check_error:null, last_check_at:new Date().toISOString() }).eq("id", farm.id);
+    onRefresh();
+
+    if (!farm.access_token) {
+      const message = "Для авточеку потрібен Meta access token. Cookie не використовується для автоматичного логіну.";
+      await supabase.from("fb_farms").update({ status:"issue", check_error:message, last_check_at:new Date().toISOString() }).eq("id", farm.id);
+      setCheckingId(null);
+      showToast(message, "error");
+      onRefresh();
+      return;
+    }
+
+    try {
+      const data = await callFbApi(farm.access_token, "me/adaccounts", {
+        fields:"id,name,account_status,currency,timezone_name,amount_spent,spend_cap,disable_reason",
+        limit:"100",
+      }, farmProxy(farm));
+
+      const accounts = data.data || [];
+      const now = new Date().toISOString();
+      const rows = accounts.map(acc => {
+        const status = mapFbAdAccountStatus(acc.account_status);
+        return {
+          farm_id:farm.id,
+          user_id:user.id,
+          fb_account_id:acc.id,
+          name:acc.name || acc.id,
+          status,
+          account_status:Number(acc.account_status) || null,
+          currency:acc.currency || null,
+          timezone:acc.timezone_name || null,
+          amount_spent:(parseFloat(acc.amount_spent) || 0) / 100,
+          spend_cap:(parseFloat(acc.spend_cap) || 0) / 100,
+          raw:acc,
+          checked_at:now,
+        };
+      });
+
+      if (rows.length) {
+        const { error } = await supabase.from("fb_farm_accounts").upsert(rows, { onConflict:"farm_id,fb_account_id" });
+        if (error) throw error;
+      }
+
+      const banned = rows.filter(r => r.status === "banned").length;
+      const alive = rows.filter(r => r.status === "alive").length;
+      const finalStatus = rows.length === 0 ? "issue" : banned === rows.length ? "banned" : banned > 0 ? "issue" : alive > 0 ? "ready" : "warming";
+      const checkError = rows.length === 0 ? "Meta API не повернув кабінети" : banned > 0 ? `Є забанені кабінети: ${banned}` : null;
+
+      await supabase.from("fb_farms").update({ status:finalStatus, check_error:checkError, last_check_at:now }).eq("id", farm.id);
+      showToast(`Чек завершено: ${rows.length} каб., банів: ${banned}`);
+    } catch (e) {
+      await supabase.from("fb_farms").update({ status:"issue", check_error:e.message, last_check_at:new Date().toISOString() }).eq("id", farm.id);
+      showToast("Помилка чеку: " + e.message, "error");
+    }
+
+    setCheckingId(null);
+    onRefresh();
+  };
+
   return (
     <div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:12, marginBottom:24 }}>
-        {[["Фармів",stats.total,"#60a5fa"],["Готових",stats.ready,"#4ade80"],["На прогріві",stats.warming,"#fbbf24"],["Забанених",stats.banned,"#f87171"],["Без проксі",stats.noProxy,"#a78bfa"]].map(([l,v,c])=>(
+        {[["Фармів",stats.total,"#60a5fa"],["Готових",stats.ready,"#4ade80"],["На чеку",stats.checking,"#fbbf24"],["Фармів у бані",stats.banned,"#f87171"],["Бан кабів",stats.bannedAccounts,"#fb7185"]].map(([l,v,c])=>(
           <div key={l} style={S.card}>
             <div style={{ color:"#64748b",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em" }}>{l}</div>
             <div style={{ color:c,fontSize:22,fontWeight:800,marginTop:4 }}>{v}</div>
@@ -858,7 +1085,7 @@ const FarmsPanel = ({ farms, buyers, user, isAdmin, onRefresh, showToast }) => {
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginBottom:16 }}>
         <div>
           <h3 style={{ color:"#e2e8f0", fontSize:16, fontWeight:700, margin:"0 0 4px" }}>ФАРМИ</h3>
-          <div style={{ color:"#64748b", fontSize:12 }}>Cookie + proxy для акаунтів. Доступ до повних cookie не показується у списку.</div>
+          <div style={{ color:"#64748b", fontSize:12 }}>Відкрий фарм, щоб бачити кабінети. Чек через Meta access token, кабінети в бані підсвічуються червоним.</div>
         </div>
         <div style={{ display:"flex", gap:10 }}>
           <input style={{ ...S.inp, width:260 }} value={q} onChange={e=>setQ(e.target.value)} placeholder="Пошук фарму / proxy / buyer" />
@@ -875,8 +1102,12 @@ const FarmsPanel = ({ farms, buyers, user, isAdmin, onRefresh, showToast }) => {
             <FarmRow
               key={farm.id}
               farm={farm}
+              farmAccounts={farmAccounts}
               buyers={buyers}
               isAdmin={isAdmin}
+              checking={checkingId === farm.id}
+              onCheck={checkFarm}
+              onImportAccounts={setAccountImportFarm}
               onEdit={()=>setModal({ mode:"edit", data:farm })}
               onDelete={()=>deleteFarm(farm)}
             />
@@ -890,6 +1121,7 @@ const FarmsPanel = ({ farms, buyers, user, isAdmin, onRefresh, showToast }) => {
         </Modal>
       )}
       {bulkOpen && <BulkFarmImport buyers={buyers} user={user} onClose={()=>setBulkOpen(false)} onDone={onRefresh} showToast={showToast} />}
+      {accountImportFarm && <FarmAccountImport farm={accountImportFarm} onClose={()=>setAccountImportFarm(null)} onSave={(rows)=>importFarmAccounts(accountImportFarm, rows)} />}
     </div>
   );
 };
@@ -936,6 +1168,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
   const [accounts, setAccounts] = useState([]);
   const [buyers, setBuyers] = useState([]);
   const [farms, setFarms] = useState([]);
+  const [farmAccounts, setFarmAccounts] = useState([]);
   const [section, setSection] = useState("setups");
   const [modal, setModal] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -944,17 +1177,20 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: s }, { data: a }, { data: p }, farmsResult] = await Promise.all([
+    const [{ data: s }, { data: a }, { data: p }, farmsResult, farmAccountsResult] = await Promise.all([
       supabase.from("fb_setups").select("*").order("created_at",{ascending:false}),
       supabase.from("fb_accounts").select("*"),
       supabase.from("profiles").select("id, full_name, role"),
       supabase.from("fb_farms").select("*").order("created_at",{ascending:false}),
+      supabase.from("fb_farm_accounts").select("*").order("checked_at",{ascending:false}),
     ]);
     if (s) setSetups(s);
     if (a) setAccounts(a);
     if (p) setBuyers(p);
     if (!farmsResult.error) setFarms(farmsResult.data || []);
     else setFarms([]);
+    if (!farmAccountsResult.error) setFarmAccounts(farmAccountsResult.data || []);
+    else setFarmAccounts([]);
     setLoading(false);
   };
 
@@ -997,7 +1233,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
       <FbAccountsSubnav active={section} onChange={setSection} />
 
       {section === "farms" ? (
-        <FarmsPanel farms={farms} buyers={buyers} user={user} isAdmin={isAdmin} onRefresh={fetchAll} showToast={showToast} />
+        <FarmsPanel farms={farms} farmAccounts={farmAccounts} buyers={buyers} user={user} isAdmin={isAdmin} onRefresh={fetchAll} showToast={showToast} />
       ) : (
         <>
           {/* Stats */}
