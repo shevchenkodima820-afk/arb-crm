@@ -3,6 +3,7 @@ import FbAccountsTab from "./FbAccounts";
 import TeamsTab from "./Teams";
 import ProfileTab from "./Profile";
 import LaunchesTab from "./Launches";
+import CreativesLibraryTab from "./Creatives";
 import { supabase } from "./supabase";
 
 const S = {
@@ -593,7 +594,7 @@ export default function App() {
 
       <div style={{ padding:24, maxWidth:1600, margin:"0 auto" }}>
         {tab === "domains" && <DomainsTab user={user} isAdmin={isAdmin} />}
-        {tab === "creatives" && <CreativesTab user={user} isAdmin={isAdmin} domains={domains} />}
+        {tab === "creatives" && <CreativesLibraryTab user={user} isAdmin={isAdmin} domains={domains} />}
         {tab === "stats" && <StatsTab domains={domains} />}
         {tab === "accounts" && <FbAccountsTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
         {tab === "launches" && isAdmin && <LaunchesTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
