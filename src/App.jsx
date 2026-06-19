@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import FbAccountsTab from "./FbAccounts";
 import TeamsTab from "./Teams";
 import ProfileTab from "./Profile";
+import LaunchesTab from "./Launches";
 import { supabase } from "./supabase";
 
 const S = {
@@ -563,6 +564,7 @@ export default function App() {
     { id:"creatives", label:"🎨 Креативи" },
     { id:"stats", label:"📊 Статистика" },
     { id:"accounts", label:"📱 FB Акаунти" },
+    { id:"launches", label:"🚀 Запуски" },
     ...((isAdmin || isTeamLead) ? [{ id:"team", label:"👥 Команди" }] : []),
   ];
 
@@ -594,6 +596,7 @@ export default function App() {
         {tab === "creatives" && <CreativesTab user={user} isAdmin={isAdmin} domains={domains} />}
         {tab === "stats" && <StatsTab domains={domains} />}
         {tab === "accounts" && <FbAccountsTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
+        {tab === "launches" && <LaunchesTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
         {tab === "team" && (isAdmin || isTeamLead) && <TeamsTab currentUserId={user.id} isAdmin={isAdmin} />}
       </div>
 
