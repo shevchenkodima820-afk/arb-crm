@@ -542,11 +542,401 @@ const SetupCard = ({ setup, buyers, isAdmin, onEdit, onDelete, onRefresh }) => {
   );
 };
 
+
+const FARM_STATUS = {
+  new: "новий",
+  ready: "готовий",
+  warming: "прогрів",
+  banned: "бан",
+  issue: "проблема",
+};
+const FARM_STATUS_COLOR = {
+  new: "#60a5fa",
+  ready: "#4ade80",
+  warming: "#fbbf24",
+  banned: "#f87171",
+  issue: "#fb7185",
+};
+
+const emptyFarm = {
+  name:"",
+  buyer_id:"",
+  cookie_data:"",
+  status:"new",
+  proxy_type:"socks5",
+  proxy_host:"",
+  proxy_port:"",
+  proxy_user:"",
+  proxy_pass:"",
+  notes:"",
+};
+
+function maskSecret(value = "") {
+  const v = String(value || "").trim();
+  if (!v) return "—";
+  if (v.length <= 18) return "••••••";
+  return `${v.slice(0, 10)}…${v.slice(-6)} · ${v.length} симв.`;
+}
+
+function proxyLabel(row) {
+  if (!row?.proxy_host) return "Без проксі";
+  const auth = row.proxy_user ? `${row.proxy_user}:***@` : "";
+  return `${row.proxy_type || "socks5"}://${auth}${row.proxy_host}${row.proxy_port ? `:${row.proxy_port}` : ""}`;
+}
+
+function parseProxyString(raw = "") {
+  const value = String(raw || "").trim();
+  if (!value) return {};
+
+  try {
+    if (value.includes("://")) {
+      const url = new URL(value);
+      return {
+        proxy_type: url.protocol.replace(":", "") || "socks5",
+        proxy_host: url.hostname || "",
+        proxy_port: url.port || "",
+        proxy_user: decodeURIComponent(url.username || ""),
+        proxy_pass: decodeURIComponent(url.password || ""),
+      };
+    }
+  } catch {}
+
+  const parts = value.split(":").map(p => p.trim());
+  if (parts.length >= 4) {
+    return { proxy_host:parts[0], proxy_port:parts[1], proxy_user:parts[2], proxy_pass:parts.slice(3).join(":"), proxy_type:"socks5" };
+  }
+  if (parts.length === 2) {
+    return { proxy_host:parts[0], proxy_port:parts[1], proxy_type:"socks5" };
+  }
+  return { proxy_host:value, proxy_type:"socks5" };
+}
+
+const FarmForm = ({ initial={}, buyers, onSave, onClose }) => {
+  const editing = Boolean(initial.id);
+  const [f, setF] = useState({
+    ...emptyFarm,
+    ...initial,
+    cookie_data: editing ? "" : (initial.cookie_data || ""),
+  });
+  const set = k => e => setF(p=>({...p,[k]:e.target.value}));
+  const applyProxyRaw = () => {
+    const parsed = parseProxyString(f.proxy_raw);
+    setF(p => ({ ...p, ...parsed }));
+  };
+
+  return (
+    <div>
+      <div style={{ background:"#0f1117", border:"1px solid #1e2330", borderRadius:10, padding:12, color:"#94a3b8", fontSize:12, marginBottom:14 }}>
+        Cookie — це credential. Зберігай тільки власні/дозволені акаунти. У CRM cookie використовується як запис, без автоматичного логіну в Facebook.
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <Field label="Назва фарму"><input style={S.inp} value={f.name} onChange={set("name")} placeholder="FARM-001" /></Field>
+        <Field label="Байєр">
+          <select style={{ ...S.inp, cursor:"pointer" }} value={f.buyer_id || ""} onChange={set("buyer_id")}>
+            <option value="">— не призначено —</option>
+            {buyers.map(b=><option key={b.id} value={b.id}>{b.full_name}</option>)}
+          </select>
+        </Field>
+        <Field label="Статус">
+          <select style={{ ...S.inp, cursor:"pointer" }} value={f.status || "new"} onChange={set("status")}>
+            {Object.entries(FARM_STATUS).map(([key,label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </Field>
+        <Field label="Швидкий proxy paste">
+          <div style={{ display:"flex", gap:8 }}>
+            <input style={S.inp} value={f.proxy_raw || ""} onChange={set("proxy_raw")} placeholder="socks5://user:pass@host:port" />
+            <button type="button" onClick={applyProxyRaw} style={{ ...S.btnGhost, padding:"8px 10px" }}>OK</button>
+          </div>
+        </Field>
+      </div>
+
+      <Field label={editing ? "Cookie / JSON cookie optional" : "Cookie / JSON cookie"}>
+        <textarea
+          style={{ ...S.inp, minHeight:120, resize:"vertical", fontFamily:"monospace", fontSize:12 }}
+          value={f.cookie_data || ""}
+          onChange={set("cookie_data")}
+          placeholder={editing ? "Залиш пустим, якщо cookie не змінюється" : "Встав cookie рядок або JSON cookies"}
+        />
+      </Field>
+
+      <p style={{ color:"#60a5fa", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", margin:"4px 0 12px" }}>🔒 Проксі</p>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <Field label="Тип">
+          <select style={{ ...S.inp, cursor:"pointer" }} value={f.proxy_type || "socks5"} onChange={set("proxy_type")}>
+            {["http","https","socks5"].map(t=><option key={t}>{t}</option>)}
+          </select>
+        </Field>
+        <Field label="Порт"><input style={S.inp} value={f.proxy_port || ""} onChange={set("proxy_port")} placeholder="21502" /></Field>
+        <Field label="Host / IP"><input style={S.inp} value={f.proxy_host || ""} onChange={set("proxy_host")} placeholder="proxy.example.com" /></Field>
+        <Field label="Логін"><input style={S.inp} value={f.proxy_user || ""} onChange={set("proxy_user")} placeholder="user" /></Field>
+        <Field label="Пароль"><input style={S.inp} value={f.proxy_pass || ""} onChange={set("proxy_pass")} placeholder="password" /></Field>
+        <Field label="Нотатки"><input style={S.inp} value={f.notes || ""} onChange={set("notes")} placeholder="2FA, дата покупки, якість тощо" /></Field>
+      </div>
+
+      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
+        <button onClick={onClose} style={S.btnGhost}>Скасувати</button>
+        <button onClick={()=>onSave(f)} style={S.btn}>{editing ? "Зберегти" : "Додати фарм"}</button>
+      </div>
+    </div>
+  );
+};
+
+const BulkFarmImport = ({ buyers, user, onClose, onDone, showToast }) => {
+  const [buyerId, setBuyerId] = useState("");
+  const [defaultProxy, setDefaultProxy] = useState("");
+  const [status, setStatus] = useState("new");
+  const [raw, setRaw] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) { showToast("Встав хоча б один cookie", "error"); return; }
+    setLoading(true);
+
+    const defaultParsedProxy = parseProxyString(defaultProxy);
+    const payloads = lines.map((line, index) => {
+      const parts = line.split("|").map(p => p.trim());
+      let name = `FARM-${String(index + 1).padStart(3, "0")}`;
+      let cookie = line;
+      let proxyRaw = "";
+      if (parts.length >= 3) {
+        name = parts[0] || name;
+        cookie = parts[1] || "";
+        proxyRaw = parts.slice(2).join("|");
+      } else if (parts.length === 2) {
+        name = parts[0] || name;
+        cookie = parts[1] || "";
+      }
+      const parsedProxy = proxyRaw ? parseProxyString(proxyRaw) : defaultParsedProxy;
+      return {
+        user_id:user.id,
+        buyer_id:buyerId || null,
+        name,
+        cookie_data:cookie,
+        status,
+        notes:"bulk import",
+        proxy_type:parsedProxy.proxy_type || "socks5",
+        proxy_host:parsedProxy.proxy_host || "",
+        proxy_port:parsedProxy.proxy_port || "",
+        proxy_user:parsedProxy.proxy_user || "",
+        proxy_pass:parsedProxy.proxy_pass || "",
+      };
+    }).filter(row => row.cookie_data);
+
+    if (!payloads.length) { setLoading(false); showToast("Не знайшов валідних cookie", "error"); return; }
+    const { error } = await supabase.from("fb_farms").insert(payloads);
+    setLoading(false);
+    if (error) { showToast("Помилка імпорту: " + error.message, "error"); return; }
+    showToast(`Імпортовано ${payloads.length} фармів`);
+    onDone();
+    onClose();
+  };
+
+  return (
+    <Modal title="🌱 Імпорт ферм по cookies" onClose={onClose}>
+      <div style={{ background:"#0f1117", border:"1px solid #1e2330", borderRadius:10, padding:12, color:"#94a3b8", fontSize:12, marginBottom:14 }}>
+        Формати рядка: <code>Назва|cookie|proxy</code>, <code>Назва|cookie</code> або просто <code>cookie</code>. Proxy: <code>socks5://user:pass@host:port</code> або <code>host:port:user:pass</code>.
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <Field label="Байєр">
+          <select style={{ ...S.inp, cursor:"pointer" }} value={buyerId} onChange={e=>setBuyerId(e.target.value)}>
+            <option value="">— не призначено —</option>
+            {buyers.map(b=><option key={b.id} value={b.id}>{b.full_name}</option>)}
+          </select>
+        </Field>
+        <Field label="Статус">
+          <select style={{ ...S.inp, cursor:"pointer" }} value={status} onChange={e=>setStatus(e.target.value)}>
+            {Object.entries(FARM_STATUS).map(([key,label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Field label="Default proxy optional">
+        <input style={S.inp} value={defaultProxy} onChange={e=>setDefaultProxy(e.target.value)} placeholder="socks5://user:pass@host:port" />
+      </Field>
+      <Field label="Cookies">
+        <textarea style={{ ...S.inp, minHeight:220, resize:"vertical", fontFamily:"monospace", fontSize:12 }} value={raw} onChange={e=>setRaw(e.target.value)} placeholder={"FARM-01|c_user=...; xs=...|socks5://user:pass@host:port\nFARM-02|[{\"name\":\"c_user\",...}]"} />
+      </Field>
+      <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+        <button onClick={onClose} style={S.btnGhost}>Скасувати</button>
+        <button onClick={submit} disabled={loading} style={{ ...S.btn, opacity:loading ? 0.7 : 1 }}>{loading ? "Імпортую…" : "Імпортувати"}</button>
+      </div>
+    </Modal>
+  );
+};
+
+const FarmRow = ({ farm, buyers, isAdmin, onEdit, onDelete }) => {
+  const buyer = buyers.find(b => b.id === farm.buyer_id);
+  const statusKey = farm.status || "new";
+  return (
+    <div style={{ border:"1px solid #1e2330", borderRadius:12, background:"#13151c", padding:16, display:"grid", gridTemplateColumns:"1fr auto", gap:14, alignItems:"center" }}>
+      <div style={{ minWidth:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+          <span style={{ width:9, height:9, borderRadius:"50%", background:FARM_STATUS_COLOR[statusKey] || "#64748b", display:"inline-block" }} />
+          <div style={{ color:"#e2e8f0", fontWeight:800, fontSize:15, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{farm.name || "FARM"}</div>
+          <span style={{ color:FARM_STATUS_COLOR[statusKey] || "#64748b", background:"#0f1117", border:"1px solid #1e2330", borderRadius:999, padding:"2px 8px", fontSize:11, fontWeight:800 }}>{FARM_STATUS[statusKey] || statusKey}</span>
+        </div>
+        <div style={{ color:"#64748b", fontSize:12, display:"flex", gap:12, flexWrap:"wrap" }}>
+          <span>👤 {buyer?.full_name || "не призначено"}</span>
+          <span>🍪 {maskSecret(farm.cookie_data)}</span>
+          <span>🔒 {proxyLabel(farm)}</span>
+          {farm.notes && <span>📝 {farm.notes}</span>}
+        </div>
+      </div>
+      <div style={{ display:"flex", gap:8 }}>
+        {isAdmin && <button onClick={onEdit} style={{ ...S.btnGhost, padding:"7px 10px" }}>✏️</button>}
+        {isAdmin && <button onClick={onDelete} style={{ ...S.btnGhost, padding:"7px 10px", color:"#f87171" }}>🗑</button>}
+      </div>
+    </div>
+  );
+};
+
+const FarmsPanel = ({ farms, buyers, user, isAdmin, onRefresh, showToast }) => {
+  const [modal, setModal] = useState(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [q, setQ] = useState("");
+
+  const filtered = farms.filter(f => {
+    const text = [f.name, f.status, f.proxy_host, f.notes, buyers.find(b=>b.id===f.buyer_id)?.full_name].join(" ").toLowerCase();
+    return !q.trim() || text.includes(q.trim().toLowerCase());
+  });
+
+  const stats = {
+    total: farms.length,
+    ready: farms.filter(f=>f.status === "ready").length,
+    warming: farms.filter(f=>f.status === "warming").length,
+    banned: farms.filter(f=>f.status === "banned").length,
+    noProxy: farms.filter(f=>!f.proxy_host).length,
+  };
+
+  const saveFarm = async (f) => {
+    if (!isAdmin) { showToast("Фарми може редагувати тільки адмін", "error"); return; }
+    const payload = {
+      name:f.name || "FARM",
+      buyer_id:f.buyer_id || null,
+      status:f.status || "new",
+      proxy_type:f.proxy_type || "socks5",
+      proxy_host:f.proxy_host || "",
+      proxy_port:f.proxy_port || "",
+      proxy_user:f.proxy_user || "",
+      proxy_pass:f.proxy_pass || "",
+      notes:f.notes || "",
+      user_id:user.id,
+    };
+    if (f.cookie_data?.trim()) payload.cookie_data = f.cookie_data.trim();
+    if (!modal?.data?.id && !payload.cookie_data) { showToast("Для нового фарму потрібен cookie", "error"); return; }
+
+    let error;
+    if (modal?.mode === "edit") ({ error } = await supabase.from("fb_farms").update(payload).eq("id", modal.data.id));
+    else ({ error } = await supabase.from("fb_farms").insert([payload]));
+    if (error) { showToast("Помилка збереження фарму: " + error.message, "error"); return; }
+    showToast(modal?.mode === "edit" ? "Фарм оновлено" : "Фарм додано");
+    setModal(null);
+    onRefresh();
+  };
+
+  const deleteFarm = async (farm) => {
+    if (!isAdmin) return;
+    if (!confirm(`Видалити фарм "${farm.name || "FARM"}"?`)) return;
+    const { error } = await supabase.from("fb_farms").delete().eq("id", farm.id);
+    if (error) { showToast("Помилка видалення: " + error.message, "error"); return; }
+    showToast("Фарм видалено");
+    onRefresh();
+  };
+
+  return (
+    <div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:12, marginBottom:24 }}>
+        {[["Фармів",stats.total,"#60a5fa"],["Готових",stats.ready,"#4ade80"],["На прогріві",stats.warming,"#fbbf24"],["Забанених",stats.banned,"#f87171"],["Без проксі",stats.noProxy,"#a78bfa"]].map(([l,v,c])=>(
+          <div key={l} style={S.card}>
+            <div style={{ color:"#64748b",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em" }}>{l}</div>
+            <div style={{ color:c,fontSize:22,fontWeight:800,marginTop:4 }}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginBottom:16 }}>
+        <div>
+          <h3 style={{ color:"#e2e8f0", fontSize:16, fontWeight:700, margin:"0 0 4px" }}>ФАРМИ</h3>
+          <div style={{ color:"#64748b", fontSize:12 }}>Cookie + proxy для акаунтів. Доступ до повних cookie не показується у списку.</div>
+        </div>
+        <div style={{ display:"flex", gap:10 }}>
+          <input style={{ ...S.inp, width:260 }} value={q} onChange={e=>setQ(e.target.value)} placeholder="Пошук фарму / proxy / buyer" />
+          {isAdmin && <button onClick={()=>setBulkOpen(true)} style={S.btnGhost}>⬆️ Імпорт cookies</button>}
+          {isAdmin && <button onClick={()=>setModal({ mode:"add", data:{} })} style={S.btn}>+ Додати фарм</button>}
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ ...S.card, textAlign:"center", color:"#475569", padding:40 }}>Фармів немає або нічого не знайдено</div>
+      ) : (
+        <div style={{ display:"grid", gap:10 }}>
+          {filtered.map(farm => (
+            <FarmRow
+              key={farm.id}
+              farm={farm}
+              buyers={buyers}
+              isAdmin={isAdmin}
+              onEdit={()=>setModal({ mode:"edit", data:farm })}
+              onDelete={()=>deleteFarm(farm)}
+            />
+          ))}
+        </div>
+      )}
+
+      {modal && (
+        <Modal title={modal.mode === "edit" ? "Редагувати фарм" : "Додати фарм"} onClose={()=>setModal(null)}>
+          <FarmForm initial={modal.data} buyers={buyers} onSave={saveFarm} onClose={()=>setModal(null)} />
+        </Modal>
+      )}
+      {bulkOpen && <BulkFarmImport buyers={buyers} user={user} onClose={()=>setBulkOpen(false)} onDone={onRefresh} showToast={showToast} />}
+    </div>
+  );
+};
+
+const FbAccountsSubnav = ({ active, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const items = [
+    { id:"setups", label:"FB Акаунти", icon:"▣" },
+    { id:"farms", label:"Фарми", icon:"🌱" },
+  ];
+  const current = items.find(i => i.id === active) || items[0];
+  return (
+    <div style={{ position:"relative", display:"inline-block", marginBottom:22 }}>
+      <button
+        onClick={()=>setOpen(o=>!o)}
+        style={{ background:"#fff", color:"#111827", border:"none", borderRadius:10, padding:"12px 18px", fontWeight:900, fontSize:16, display:"flex", alignItems:"center", gap:10, cursor:"pointer", boxShadow:"0 10px 30px #0004" }}
+      >
+        <span>{current.icon}</span>
+        <span>{current.label}</span>
+        <span style={{ color:"#6b7280" }}>⌄</span>
+      </button>
+      {open && (
+        <div style={{ position:"absolute", top:"calc(100% + 10px)", left:0, width:260, background:"#fff", borderRadius:14, padding:8, boxShadow:"0 16px 45px #0005", zIndex:50 }}>
+          {items.map(item => (
+            <button
+              key={item.id}
+              onClick={()=>{ onChange(item.id); setOpen(false); }}
+              style={{ width:"100%", border:"none", borderRadius:10, background:active === item.id ? "#e8eef8" : "#fff", color:active === item.id ? "#1e3a8a" : "#374151", padding:"12px 14px", display:"flex", alignItems:"center", gap:12, cursor:"pointer", fontWeight:900, fontSize:15, textAlign:"left" }}
+            >
+              <span>{item.icon}</span>
+              <span style={{ flex:1 }}>{item.label}</span>
+              {active === item.id && <span>✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────
 export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
   const [setups, setSetups] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [buyers, setBuyers] = useState([]);
+  const [farms, setFarms] = useState([]);
+  const [section, setSection] = useState("setups");
   const [modal, setModal] = useState(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -554,14 +944,17 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: s }, { data: a }, { data: p }] = await Promise.all([
+    const [{ data: s }, { data: a }, { data: p }, farmsResult] = await Promise.all([
       supabase.from("fb_setups").select("*").order("created_at",{ascending:false}),
       supabase.from("fb_accounts").select("*"),
       supabase.from("profiles").select("id, full_name, role"),
+      supabase.from("fb_farms").select("*").order("created_at",{ascending:false}),
     ]);
     if (s) setSetups(s);
     if (a) setAccounts(a);
     if (p) setBuyers(p);
+    if (!farmsResult.error) setFarms(farmsResult.data || []);
+    else setFarms([]);
     setLoading(false);
   };
 
@@ -601,43 +994,51 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
     <div>
       {toast && <div style={{ position:"fixed", bottom:24, right:24, background:toast.type==="error"?"#dc2626":"#16a34a", color:"#fff", borderRadius:10, padding:"12px 20px", fontSize:14, fontWeight:600, zIndex:999 }}>{toast.msg}</div>}
 
-      {/* Stats */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:12, marginBottom:24 }}>
-        {[["Акаунтів",stats.total,"#60a5fa"],["Живих",stats.alive,"#4ade80"],["На прогріві",stats.warm,"#fbbf24"],["Забанених",stats.banned,"#f87171"],["Спенд сьогодні",`$${stats.spend.toFixed(0)}`,"#a78bfa"]].map(([l,v,c])=>(
-          <div key={l} style={S.card}>
-            <div style={{ color:"#64748b",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em" }}>{l}</div>
-            <div style={{ color:c,fontSize:22,fontWeight:800,marginTop:4 }}>{v}</div>
+      <FbAccountsSubnav active={section} onChange={setSection} />
+
+      {section === "farms" ? (
+        <FarmsPanel farms={farms} buyers={buyers} user={user} isAdmin={isAdmin} onRefresh={fetchAll} showToast={showToast} />
+      ) : (
+        <>
+          {/* Stats */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:12, marginBottom:24 }}>
+            {[["Акаунтів",stats.total,"#60a5fa"],["Живих",stats.alive,"#4ade80"],["На прогріві",stats.warm,"#fbbf24"],["Забанених",stats.banned,"#f87171"],["Спенд сьогодні",`$${stats.spend.toFixed(0)}`,"#a78bfa"]].map(([l,v,c])=>(
+              <div key={l} style={S.card}>
+                <div style={{ color:"#64748b",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em" }}>{l}</div>
+                <div style={{ color:c,fontSize:22,fontWeight:800,marginTop:4 }}>{v}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* Header */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-        <h3 style={{ color:"#e2e8f0", fontSize:16, fontWeight:700, margin:0 }}>ВАШІ СЕТАПИ</h3>
-        <button onClick={()=>setModal({mode:"add",data:{}})} style={S.btn}>+ Додати сетап</button>
-      </div>
+          {/* Header */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+            <h3 style={{ color:"#e2e8f0", fontSize:16, fontWeight:700, margin:0 }}>ВАШІ СЕТАПИ</h3>
+            <button onClick={()=>setModal({mode:"add",data:{}})} style={S.btn}>+ Додати сетап</button>
+          </div>
 
-      {/* Setups */}
-      {loading ? <div style={{ textAlign:"center",color:"#475569",padding:40 }}>Завантаження…</div> : (
-        setups.length===0
-          ? <div style={{ ...S.card, textAlign:"center", color:"#475569", padding:40 }}>Немає сетапів — додайте перший</div>
-          : setups.map(s=>(
-            <SetupCard
-              key={s.id}
-              setup={s}
-              buyers={buyers}
-              isAdmin={isAdmin}
-              onEdit={()=>setModal({mode:"edit",data:s})}
-              onDelete={()=>delSetup(s.id)}
-              onRefresh={fetchAll}
-            />
-          ))
-      )}
+          {/* Setups */}
+          {loading ? <div style={{ textAlign:"center",color:"#475569",padding:40 }}>Завантаження…</div> : (
+            setups.length===0
+              ? <div style={{ ...S.card, textAlign:"center", color:"#475569", padding:40 }}>Немає сетапів — додайте перший</div>
+              : setups.map(s=>(
+                <SetupCard
+                  key={s.id}
+                  setup={s}
+                  buyers={buyers}
+                  isAdmin={isAdmin}
+                  onEdit={()=>setModal({mode:"edit",data:s})}
+                  onDelete={()=>delSetup(s.id)}
+                  onRefresh={fetchAll}
+                />
+              ))
+          )}
 
-      {modal && (
-        <Modal title={modal.mode==="add"?"Додати сетап":"Редагувати сетап"} onClose={()=>setModal(null)}>
-          <SetupForm initial={modal.data} buyers={buyers} onSave={saveSetup} onClose={()=>setModal(null)} />
-        </Modal>
+          {modal && (
+            <Modal title={modal.mode==="add"?"Додати сетап":"Редагувати сетап"} onClose={()=>setModal(null)}>
+              <SetupForm initial={modal.data} buyers={buyers} onSave={saveSetup} onClose={()=>setModal(null)} />
+            </Modal>
+          )}
+        </>
       )}
     </div>
   );
