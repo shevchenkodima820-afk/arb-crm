@@ -1,6 +1,11 @@
 // Authenticated Google Drive upload endpoint.
 // Copies a public creative URL to Google Drive and returns Drive file metadata.
-// Required env:
+// Auth options:
+// OAuth user token, preferred for regular My Drive:
+// - GOOGLE_CLIENT_ID
+// - GOOGLE_CLIENT_SECRET
+// - GOOGLE_REFRESH_TOKEN
+// Service account fallback, works reliably with Shared Drives:
 // - GOOGLE_SERVICE_ACCOUNT_EMAIL
 // - GOOGLE_PRIVATE_KEY
 // Optional env:
@@ -52,12 +57,31 @@ async function verifySupabaseJwt(req) {
   return response.json();
 }
 
-async function getGoogleAccessToken() {
+async function getOAuthUserAccessToken() {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  if (!clientId || !clientSecret || !refreshToken) return null;
+
+  const response = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error_description || data.error || 'Google OAuth refresh token error');
+  return data.access_token;
+}
+
+async function getServiceAccountAccessToken() {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = normalizePrivateKey(process.env.GOOGLE_PRIVATE_KEY);
-  if (!clientEmail || !privateKey) {
-    throw new Error('Google Drive is not configured: missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_PRIVATE_KEY');
-  }
+  if (!clientEmail || !privateKey) return null;
 
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: 'RS256', typ: 'JWT' };
@@ -87,6 +111,16 @@ async function getGoogleAccessToken() {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error_description || data.error || 'Google OAuth token error');
   return data.access_token;
+}
+
+async function getGoogleAccessToken() {
+  const oauthToken = await getOAuthUserAccessToken();
+  if (oauthToken) return { accessToken: oauthToken, authMode: 'oauth' };
+
+  const serviceToken = await getServiceAccountAccessToken();
+  if (serviceToken) return { accessToken: serviceToken, authMode: 'service_account' };
+
+  throw new Error('Google Drive is not configured: add GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN for My Drive, or GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_PRIVATE_KEY for Shared Drive');
 }
 
 function escapeDriveQueryString(value) {
@@ -191,7 +225,7 @@ export default async function handler(req, res) {
 
     if (!fileUrl) return res.status(400).json({ error: 'Missing fileUrl' });
 
-    const accessToken = await getGoogleAccessToken();
+    const { accessToken, authMode } = await getGoogleAccessToken();
     const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || '';
     const folder = await findOrCreateFolder({ accessToken, name: folderName, parentId: rootFolderId });
 
@@ -214,6 +248,7 @@ export default async function handler(req, res) {
       ].join('\n'),
       appProperties: {
         source: 'ArbCRM',
+        authMode,
         crmCreativeId: crmCreativeId || '',
         folderName: folderName || 'Unsorted',
         tags: Array.isArray(tags) ? tags.join(',') : '',
@@ -230,6 +265,7 @@ export default async function handler(req, res) {
       webContentLink: file.webContentLink,
       folderId: folder.id,
       folderName: folder.name,
+      authMode,
     });
   } catch (e) {
     return res.status(400).json({ error: e.message });
