@@ -520,7 +520,7 @@ export default function LaunchesTab({ user, isAdmin, canSeeAll }) {
 
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, gap:16 }}>
         <div>
-          <h2 style={{ color:"#e2e8f0", margin:"0 0 4px", fontSize:22, fontWeight:900 }}>Запуски</h2>
+          <h2 style={{ color:"#e2e8f0", margin:"0 0 4px", fontSize:22, fontWeight:900, display:"flex", alignItems:"center", gap:10 }}>Запуски <span style={{ background:"#ca8a0422", color:"#fbbf24", border:"1px solid #ca8a0455", borderRadius:999, padding:"3px 9px", fontSize:11, fontWeight:900, letterSpacing:"0.04em" }}>BETA · ADMIN ONLY</span></h2>
           <div style={{ color:"#64748b", fontSize:13 }}>Підготовка та масовий запуск рекламних кампаній</div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", justifyContent:"flex-end" }}>
