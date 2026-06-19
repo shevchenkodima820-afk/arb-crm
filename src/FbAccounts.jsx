@@ -233,9 +233,9 @@ const StatusDot = ({ status }) => (
 );
 
 // ─── SETUP FORM ───────────────────────────────────────────────────────────
-const SetupForm = ({ initial={}, buyers, onSave, onClose }) => {
+const SetupForm = ({ initial={}, buyers, setupFolders=[], onSave, onClose }) => {
   const [f, setF] = useState({
-    name:"", token:"", buyer_id:"",
+    name:"", token:"", buyer_id:"", folder_id:"",
     proxy_type:"socks5", proxy_host:"", proxy_port:"",
     proxy_user:"", proxy_pass:"",
     ...initial
@@ -244,12 +244,20 @@ const SetupForm = ({ initial={}, buyers, onSave, onClose }) => {
   return (
     <div>
       <Field label="Назва сетапу"><input style={S.inp} value={f.name} onChange={set("name")} placeholder="Мій фарм #1" /></Field>
-      <Field label="Байєр">
-        <select style={{ ...S.inp, cursor:"pointer" }} value={f.buyer_id} onChange={set("buyer_id")}>
-          <option value="">— виберіть байєра —</option>
-          {buyers.map(b=><option key={b.id} value={b.id}>{b.full_name}</option>)}
-        </select>
-      </Field>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <Field label="Байєр">
+          <select style={{ ...S.inp, cursor:"pointer" }} value={f.buyer_id || ""} onChange={set("buyer_id")}>
+            <option value="">— виберіть байєра —</option>
+            {buyers.map(b=><option key={b.id} value={b.id}>{b.full_name}</option>)}
+          </select>
+        </Field>
+        <Field label="Папка">
+          <select style={{ ...S.inp, cursor:"pointer" }} value={f.folder_id || ""} onChange={set("folder_id")}>
+            <option value="">Без папки</option>
+            {setupFolders.map(folder=><option key={folder.id} value={folder.id}>📁 {folder.name}</option>)}
+          </select>
+        </Field>
+      </div>
       <Field label="Facebook Access Token">
         <input style={S.inp} value={f.token} onChange={set("token")} placeholder="EAAxxxxxxxxxxxxxxxxx" />
         <div style={{ color:"#475569", fontSize:11, marginTop:4 }}>
@@ -277,7 +285,7 @@ const SetupForm = ({ initial={}, buyers, onSave, onClose }) => {
 };
 
 // ─── SETUP CARD (розкривається) ───────────────────────────────────────────
-const SetupCard = ({ setup, buyers, isAdmin, onEdit, onDelete, onRefresh }) => {
+const SetupCard = ({ setup, buyers, setupFolders, isAdmin, onEdit, onDelete, onRefresh }) => {
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null); // { accounts, pages, pixels }
@@ -366,6 +374,7 @@ const SetupCard = ({ setup, buyers, isAdmin, onEdit, onDelete, onRefresh }) => {
   };
 
   const buyer = buyers.find(b=>b.id===setup.buyer_id);
+  const folder = setupFolders.find(f=>f.id===setup.folder_id);
   const totalSpend = data?.accounts.reduce((s,a)=>s+(parseFloat(a.today_spend)||0),0)||0;
 
   return (
@@ -383,6 +392,8 @@ const SetupCard = ({ setup, buyers, isAdmin, onEdit, onDelete, onRefresh }) => {
         <div style={{ flex:1 }}>
           <div style={{ color:"#e2e8f0", fontWeight:700, fontSize:15 }}>{setup.name}</div>
           <div style={{ color:"#64748b", fontSize:12, marginTop:2 }}>
+            <span>📁 {folder?.name || "Без папки"}</span>
+            {" · "}
             {setup.proxy_host ? `🔒 ${setup.proxy_type}://${setup.proxy_host}:${setup.proxy_port}` : "⚠️ Без проксі"}
             {" · "}
             <span style={{ color:"#60a5fa" }}>{buyer?.full_name||"не призначений"}</span>
@@ -577,6 +588,8 @@ const FARM_ACCOUNT_COLOR = {
 const FARM_FOLDER_ALL = "__all";
 const FARM_FOLDER_NONE = "__none";
 const farmFolderName = (folderId, farmFolders=[]) => farmFolders.find(f => f.id === folderId)?.name || "Без папки";
+const SETUP_FOLDER_ALL = "__all_setups";
+const SETUP_FOLDER_NONE = "__none_setups";
 
 const emptyFarm = {
   name:"",
@@ -1238,6 +1251,8 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
   const [farms, setFarms] = useState([]);
   const [farmAccounts, setFarmAccounts] = useState([]);
   const [farmFolders, setFarmFolders] = useState([]);
+  const [setupFolders, setSetupFolders] = useState([]);
+  const [selectedSetupFolder, setSelectedSetupFolder] = useState(SETUP_FOLDER_ALL);
   const [section, setSection] = useState("setups");
   const [modal, setModal] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1246,13 +1261,14 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: s }, { data: a }, { data: p }, farmsResult, farmAccountsResult, farmFoldersResult] = await Promise.all([
+    const [{ data: s }, { data: a }, { data: p }, farmsResult, farmAccountsResult, farmFoldersResult, setupFoldersResult] = await Promise.all([
       supabase.from("fb_setups").select("*").order("created_at",{ascending:false}),
       supabase.from("fb_accounts").select("*"),
       supabase.from("profiles").select("id, full_name, role"),
       supabase.from("fb_farms").select("*").order("created_at",{ascending:false}),
       supabase.from("fb_farm_accounts").select("*").order("checked_at",{ascending:false}),
       supabase.from("fb_farm_folders").select("*").order("name",{ascending:true}),
+      supabase.from("fb_setup_folders").select("*").order("name",{ascending:true}),
     ]);
     if (s) setSetups(s);
     if (a) setAccounts(a);
@@ -1263,13 +1279,35 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
     else setFarmAccounts([]);
     if (!farmFoldersResult.error) setFarmFolders(farmFoldersResult.data || []);
     else setFarmFolders([]);
+    if (!setupFoldersResult.error) setSetupFolders(setupFoldersResult.data || []);
+    else setSetupFolders([]);
     setLoading(false);
   };
 
   useEffect(()=>{ fetchAll(); },[]);
 
+  const setupFolderCount = (folderId) => {
+    if (folderId === SETUP_FOLDER_ALL) return setups.length;
+    if (folderId === SETUP_FOLDER_NONE) return setups.filter(s => !s.folder_id).length;
+    return setups.filter(s => s.folder_id === folderId).length;
+  };
+
+  const filteredSetups = setups.filter(s => selectedSetupFolder === SETUP_FOLDER_ALL
+    || (selectedSetupFolder === SETUP_FOLDER_NONE ? !s.folder_id : s.folder_id === selectedSetupFolder)
+  );
+
+  const createSetupFolder = async () => {
+    if (!isAdmin) return;
+    const name = prompt("Назва папки", `Агент ${setupFolders.length + 1}`);
+    if (!name?.trim()) return;
+    const { error } = await supabase.from("fb_setup_folders").insert([{ name:name.trim(), user_id:user.id }]);
+    if (error) { showToast("Помилка створення папки: " + error.message, "error"); return; }
+    showToast("Папку створено");
+    fetchAll();
+  };
+
   const saveSetup = async (f) => {
-    const payload = { name:f.name, token:f.token, buyer_id:f.buyer_id||null, proxy_type:f.proxy_type, proxy_host:f.proxy_host, proxy_port:f.proxy_port, proxy_user:f.proxy_user, proxy_pass:f.proxy_pass, user_id:user.id };
+    const payload = { name:f.name, token:f.token, buyer_id:f.buyer_id||null, folder_id:f.folder_id||null, proxy_type:f.proxy_type, proxy_host:f.proxy_host, proxy_port:f.proxy_port, proxy_user:f.proxy_user, proxy_pass:f.proxy_pass, user_id:user.id };
     if (modal.mode==="add") {
       const { error } = await supabase.from("fb_setups").insert([payload]);
       if (error) { showToast("❌ "+error.message,"error"); return; }
@@ -1318,6 +1356,31 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
             ))}
           </div>
 
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:18 }}>
+            {[{ id:SETUP_FOLDER_ALL, name:"Всі сетапи" }, { id:SETUP_FOLDER_NONE, name:"Без папки" }, ...setupFolders].map(folder => {
+              const active = selectedSetupFolder === folder.id;
+              return (
+                <button
+                  key={folder.id}
+                  onClick={()=>setSelectedSetupFolder(folder.id)}
+                  style={{
+                    border:active ? "1px solid #3b82f6" : "1px solid #1e2330",
+                    background:active ? "#1d4ed833" : "#13151c",
+                    color:active ? "#bfdbfe" : "#94a3b8",
+                    borderRadius:999,
+                    padding:"8px 12px",
+                    cursor:"pointer",
+                    fontWeight:800,
+                    fontSize:13,
+                  }}
+                >
+                  📁 {folder.name} <span style={{ color:active ? "#93c5fd" : "#64748b" }}>· {setupFolderCount(folder.id)}</span>
+                </button>
+              );
+            })}
+            {isAdmin && <button onClick={createSetupFolder} style={{ ...S.btnGhost, borderRadius:999, padding:"8px 12px" }}>+ Папка</button>}
+          </div>
+
           {/* Header */}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
             <h3 style={{ color:"#e2e8f0", fontSize:16, fontWeight:700, margin:0 }}>ВАШІ СЕТАПИ</h3>
@@ -1326,13 +1389,14 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
           {/* Setups */}
           {loading ? <div style={{ textAlign:"center",color:"#475569",padding:40 }}>Завантаження…</div> : (
-            setups.length===0
-              ? <div style={{ ...S.card, textAlign:"center", color:"#475569", padding:40 }}>Немає сетапів — додайте перший</div>
-              : setups.map(s=>(
+            filteredSetups.length===0
+              ? <div style={{ ...S.card, textAlign:"center", color:"#475569", padding:40 }}>Сетапів у цій папці немає</div>
+              : filteredSetups.map(s=>(
                 <SetupCard
                   key={s.id}
                   setup={s}
                   buyers={buyers}
+                  setupFolders={setupFolders}
                   isAdmin={isAdmin}
                   onEdit={()=>setModal({mode:"edit",data:s})}
                   onDelete={()=>delSetup(s.id)}
@@ -1343,7 +1407,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
           {modal && (
             <Modal title={modal.mode==="add"?"Додати сетап":"Редагувати сетап"} onClose={()=>setModal(null)}>
-              <SetupForm initial={modal.data} buyers={buyers} onSave={saveSetup} onClose={()=>setModal(null)} />
+              <SetupForm initial={modal.data} buyers={buyers} setupFolders={setupFolders} onSave={saveSetup} onClose={()=>setModal(null)} />
             </Modal>
           )}
         </>
