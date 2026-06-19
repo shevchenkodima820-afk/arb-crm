@@ -574,9 +574,14 @@ const FARM_ACCOUNT_COLOR = {
   unknown: "#64748b",
 };
 
+const FARM_FOLDER_ALL = "__all";
+const FARM_FOLDER_NONE = "__none";
+const farmFolderName = (folderId, farmFolders=[]) => farmFolders.find(f => f.id === folderId)?.name || "Без папки";
+
 const emptyFarm = {
   name:"",
   buyer_id:"",
+  folder_id:"",
   cookie_data:"",
   access_token:"",
   status:"new",
@@ -647,7 +652,7 @@ function mapFbAdAccountStatus(accountStatus) {
   return "unknown";
 }
 
-const FarmForm = ({ initial={}, buyers, onSave, onClose }) => {
+const FarmForm = ({ initial={}, buyers, farmFolders=[], onSave, onClose }) => {
   const editing = Boolean(initial.id);
   const [f, setF] = useState({
     ...emptyFarm,
@@ -673,6 +678,12 @@ const FarmForm = ({ initial={}, buyers, onSave, onClose }) => {
           <select style={{ ...S.inp, cursor:"pointer" }} value={f.buyer_id || ""} onChange={set("buyer_id")}>
             <option value="">— не призначено —</option>
             {buyers.map(b=><option key={b.id} value={b.id}>{b.full_name}</option>)}
+          </select>
+        </Field>
+        <Field label="Папка">
+          <select style={{ ...S.inp, cursor:"pointer" }} value={f.folder_id || ""} onChange={set("folder_id")}>
+            <option value="">Без папки</option>
+            {farmFolders.map(folder=><option key={folder.id} value={folder.id}>📁 {folder.name}</option>)}
           </select>
         </Field>
         <Field label="Статус">
@@ -765,8 +776,9 @@ const FarmAccountImport = ({ farm, onClose, onSave }) => {
   );
 };
 
-const BulkFarmImport = ({ buyers, user, onClose, onDone, showToast }) => {
+const BulkFarmImport = ({ buyers, farmFolders=[], user, onClose, onDone, showToast }) => {
   const [buyerId, setBuyerId] = useState("");
+  const [folderId, setFolderId] = useState("");
   const [defaultProxy, setDefaultProxy] = useState("");
   const [status, setStatus] = useState("new");
   const [raw, setRaw] = useState("");
@@ -795,6 +807,7 @@ const BulkFarmImport = ({ buyers, user, onClose, onDone, showToast }) => {
       return {
         user_id:user.id,
         buyer_id:buyerId || null,
+        folder_id:folderId || null,
         name,
         cookie_data:cookie,
         status,
@@ -826,6 +839,12 @@ const BulkFarmImport = ({ buyers, user, onClose, onDone, showToast }) => {
           <select style={{ ...S.inp, cursor:"pointer" }} value={buyerId} onChange={e=>setBuyerId(e.target.value)}>
             <option value="">— не призначено —</option>
             {buyers.map(b=><option key={b.id} value={b.id}>{b.full_name}</option>)}
+          </select>
+        </Field>
+        <Field label="Папка">
+          <select style={{ ...S.inp, cursor:"pointer" }} value={folderId} onChange={e=>setFolderId(e.target.value)}>
+            <option value="">Без папки</option>
+            {farmFolders.map(folder=><option key={folder.id} value={folder.id}>📁 {folder.name}</option>)}
           </select>
         </Field>
         <Field label="Статус">
@@ -888,9 +907,10 @@ const FarmAccountsTable = ({ accounts }) => {
   );
 };
 
-const FarmRow = ({ farm, farmAccounts, buyers, isAdmin, onEdit, onDelete, onCheck, onImportAccounts, checking }) => {
+const FarmRow = ({ farm, farmAccounts, buyers, farmFolders, isAdmin, onEdit, onDelete, onCheck, onImportAccounts, checking }) => {
   const [expanded, setExpanded] = useState(false);
   const buyer = buyers.find(b => b.id === farm.buyer_id);
+  const folder = farmFolders.find(f => f.id === farm.folder_id);
   const statusKey = farm.status || "new";
   const accounts = farmAccounts.filter(a => a.farm_id === farm.id);
   const bannedCount = accounts.filter(a => a.status === "banned").length;
@@ -908,6 +928,7 @@ const FarmRow = ({ farm, farmAccounts, buyers, isAdmin, onEdit, onDelete, onChec
             {bannedCount > 0 && <span style={{ color:"#fecaca", background:"#7f1d1d66", borderRadius:999, padding:"2px 8px", fontSize:11, fontWeight:900 }}>бан кабів: {bannedCount}</span>}
           </div>
           <div style={{ color:"#64748b", fontSize:12, display:"flex", gap:12, flexWrap:"wrap" }}>
+            <span>📁 {folder?.name || "Без папки"}</span>
             <span>👤 {buyer?.full_name || "не призначено"}</span>
             <span>🍪 {maskSecret(farm.cookie_data)}</span>
             <span>🔑 {farm.access_token ? "token є" : "без token"}</span>
@@ -935,16 +956,26 @@ const FarmRow = ({ farm, farmAccounts, buyers, isAdmin, onEdit, onDelete, onChec
   );
 };
 
-const FarmsPanel = ({ farms, farmAccounts, buyers, user, isAdmin, onRefresh, showToast }) => {
+const FarmsPanel = ({ farms, farmAccounts, farmFolders, buyers, user, isAdmin, onRefresh, showToast }) => {
   const [modal, setModal] = useState(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [accountImportFarm, setAccountImportFarm] = useState(null);
   const [checkingId, setCheckingId] = useState(null);
+  const [selectedFolder, setSelectedFolder] = useState(FARM_FOLDER_ALL);
   const [q, setQ] = useState("");
 
+  const folderCount = (folderId) => {
+    if (folderId === FARM_FOLDER_ALL) return farms.length;
+    if (folderId === FARM_FOLDER_NONE) return farms.filter(f => !f.folder_id).length;
+    return farms.filter(f => f.folder_id === folderId).length;
+  };
+
   const filtered = farms.filter(f => {
-    const text = [f.name, f.status, f.proxy_host, f.notes, buyers.find(b=>b.id===f.buyer_id)?.full_name].join(" ").toLowerCase();
-    return !q.trim() || text.includes(q.trim().toLowerCase());
+    const folder = farmFolders.find(ff => ff.id === f.folder_id);
+    const folderMatches = selectedFolder === FARM_FOLDER_ALL
+      || (selectedFolder === FARM_FOLDER_NONE ? !f.folder_id : f.folder_id === selectedFolder);
+    const text = [f.name, f.status, f.proxy_host, f.notes, folder?.name, buyers.find(b=>b.id===f.buyer_id)?.full_name].join(" ").toLowerCase();
+    return folderMatches && (!q.trim() || text.includes(q.trim().toLowerCase()));
   });
 
   const stats = {
@@ -955,11 +986,22 @@ const FarmsPanel = ({ farms, farmAccounts, buyers, user, isAdmin, onRefresh, sho
     bannedAccounts: farmAccounts.filter(a=>a.status === "banned").length,
   };
 
+  const createFolder = async () => {
+    if (!isAdmin) return;
+    const name = prompt("Назва папки", `Агент ${farmFolders.length + 1}`);
+    if (!name?.trim()) return;
+    const { error } = await supabase.from("fb_farm_folders").insert([{ name:name.trim(), user_id:user.id }]);
+    if (error) { showToast("Помилка створення папки: " + error.message, "error"); return; }
+    showToast("Папку створено");
+    onRefresh();
+  };
+
   const saveFarm = async (f) => {
     if (!isAdmin) { showToast("Фарми може редагувати тільки адмін", "error"); return; }
     const payload = {
       name:f.name || "FARM",
       buyer_id:f.buyer_id || null,
+      folder_id:f.folder_id || null,
       status:f.status || "new",
       proxy_type:f.proxy_type || "socks5",
       proxy_host:f.proxy_host || "",
@@ -1082,6 +1124,31 @@ const FarmsPanel = ({ farms, farmAccounts, buyers, user, isAdmin, onRefresh, sho
         ))}
       </div>
 
+      <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:18 }}>
+        {[{ id:FARM_FOLDER_ALL, name:"Всі фарми" }, { id:FARM_FOLDER_NONE, name:"Без папки" }, ...farmFolders].map(folder => {
+          const active = selectedFolder === folder.id;
+          return (
+            <button
+              key={folder.id}
+              onClick={()=>setSelectedFolder(folder.id)}
+              style={{
+                border:active ? "1px solid #3b82f6" : "1px solid #1e2330",
+                background:active ? "#1d4ed833" : "#13151c",
+                color:active ? "#bfdbfe" : "#94a3b8",
+                borderRadius:999,
+                padding:"8px 12px",
+                cursor:"pointer",
+                fontWeight:800,
+                fontSize:13,
+              }}
+            >
+              📁 {folder.name} <span style={{ color:active ? "#93c5fd" : "#64748b" }}>· {folderCount(folder.id)}</span>
+            </button>
+          );
+        })}
+        {isAdmin && <button onClick={createFolder} style={{ ...S.btnGhost, borderRadius:999, padding:"8px 12px" }}>+ Папка</button>}
+      </div>
+
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginBottom:16 }}>
         <div>
           <h3 style={{ color:"#e2e8f0", fontSize:16, fontWeight:700, margin:"0 0 4px" }}>ФАРМИ</h3>
@@ -1104,6 +1171,7 @@ const FarmsPanel = ({ farms, farmAccounts, buyers, user, isAdmin, onRefresh, sho
               farm={farm}
               farmAccounts={farmAccounts}
               buyers={buyers}
+              farmFolders={farmFolders}
               isAdmin={isAdmin}
               checking={checkingId === farm.id}
               onCheck={checkFarm}
@@ -1117,10 +1185,10 @@ const FarmsPanel = ({ farms, farmAccounts, buyers, user, isAdmin, onRefresh, sho
 
       {modal && (
         <Modal title={modal.mode === "edit" ? "Редагувати фарм" : "Додати фарм"} onClose={()=>setModal(null)}>
-          <FarmForm initial={modal.data} buyers={buyers} onSave={saveFarm} onClose={()=>setModal(null)} />
+          <FarmForm initial={modal.data} buyers={buyers} farmFolders={farmFolders} onSave={saveFarm} onClose={()=>setModal(null)} />
         </Modal>
       )}
-      {bulkOpen && <BulkFarmImport buyers={buyers} user={user} onClose={()=>setBulkOpen(false)} onDone={onRefresh} showToast={showToast} />}
+      {bulkOpen && <BulkFarmImport buyers={buyers} farmFolders={farmFolders} user={user} onClose={()=>setBulkOpen(false)} onDone={onRefresh} showToast={showToast} />}
       {accountImportFarm && <FarmAccountImport farm={accountImportFarm} onClose={()=>setAccountImportFarm(null)} onSave={(rows)=>importFarmAccounts(accountImportFarm, rows)} />}
     </div>
   );
@@ -1169,6 +1237,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
   const [buyers, setBuyers] = useState([]);
   const [farms, setFarms] = useState([]);
   const [farmAccounts, setFarmAccounts] = useState([]);
+  const [farmFolders, setFarmFolders] = useState([]);
   const [section, setSection] = useState("setups");
   const [modal, setModal] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1177,12 +1246,13 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: s }, { data: a }, { data: p }, farmsResult, farmAccountsResult] = await Promise.all([
+    const [{ data: s }, { data: a }, { data: p }, farmsResult, farmAccountsResult, farmFoldersResult] = await Promise.all([
       supabase.from("fb_setups").select("*").order("created_at",{ascending:false}),
       supabase.from("fb_accounts").select("*"),
       supabase.from("profiles").select("id, full_name, role"),
       supabase.from("fb_farms").select("*").order("created_at",{ascending:false}),
       supabase.from("fb_farm_accounts").select("*").order("checked_at",{ascending:false}),
+      supabase.from("fb_farm_folders").select("*").order("name",{ascending:true}),
     ]);
     if (s) setSetups(s);
     if (a) setAccounts(a);
@@ -1191,6 +1261,8 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
     else setFarms([]);
     if (!farmAccountsResult.error) setFarmAccounts(farmAccountsResult.data || []);
     else setFarmAccounts([]);
+    if (!farmFoldersResult.error) setFarmFolders(farmFoldersResult.data || []);
+    else setFarmFolders([]);
     setLoading(false);
   };
 
@@ -1233,7 +1305,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
       <FbAccountsSubnav active={section} onChange={setSection} />
 
       {section === "farms" ? (
-        <FarmsPanel farms={farms} farmAccounts={farmAccounts} buyers={buyers} user={user} isAdmin={isAdmin} onRefresh={fetchAll} showToast={showToast} />
+        <FarmsPanel farms={farms} farmAccounts={farmAccounts} farmFolders={farmFolders} buyers={buyers} user={user} isAdmin={isAdmin} onRefresh={fetchAll} showToast={showToast} />
       ) : (
         <>
           {/* Stats */}
