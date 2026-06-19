@@ -107,6 +107,10 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
   const [toast, setToast] = useState(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [upload, setUpload] = useState(emptyUpload);
+  const [uploadFiles, setUploadFiles] = useState([]);
+  const [uploadFolderKey, setUploadFolderKey] = useState("derived:Unsorted");
+  const [uploadTags, setUploadTags] = useState("");
+  const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
 
@@ -180,35 +184,53 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
   };
 
   const openUpload = () => {
-    setUpload({ ...emptyUpload, folder_id:selectedFolder?.id || "", buyer:selectedFolder?.id ? "" : selectedFolder?.name || "" });
+    const key = selectedFolder?.key || "derived:Unsorted";
+    setUpload({ ...emptyUpload, folder_id:selectedFolder?.id || "", buyer:selectedFolder?.id ? "" : selectedFolder?.name === "Unsorted" ? "" : selectedFolder?.name || "" });
+    setUploadFolderKey(key);
+    setUploadFiles([]);
+    setUploadTags("");
+    setDragOver(false);
     setUploadOpen(true);
   };
 
-  const handleFile = async (file) => {
-    if (!file) return;
-    setUploading(true);
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const path = `${user.id}/${Date.now()}-${safeName}`;
-    const { error } = await supabase.storage.from("creatives").upload(path, file, { upsert:false });
-    if (error) {
-      showToast("Upload error: " + error.message, "error");
-      setUploading(false);
-      return;
+  const closeUpload = () => {
+    setUploadOpen(false);
+    setUpload(emptyUpload);
+    setUploadFiles([]);
+    setUploadTags("");
+    setDragOver(false);
+  };
+
+  const selectUploadFolder = (folder) => {
+    setUploadFolderKey(folder.key);
+    setUpload(prev => ({
+      ...prev,
+      folder_id:folder.id || "",
+      buyer:folder.id || folder.name === "Unsorted" ? "" : folder.name,
+    }));
+  };
+
+  const addUploadFiles = (files) => {
+    const list = Array.from(files || []).filter(file => file.type.startsWith("image/") || file.type.startsWith("video/"));
+    if (!list.length) return;
+    setUploadFiles(prev => [...prev, ...list]);
+    if (!upload.name && list.length === 1) {
+      const file = list[0];
+      setUpload(prev => ({ ...prev, name:file.name.replace(/\.[^.]+$/, ""), media_type:detectType("", file) }));
     }
-    const { data } = supabase.storage.from("creatives").getPublicUrl(path);
-    setUpload(prev => ({ ...prev, preview_url:data.publicUrl, name:prev.name || file.name.replace(/\.[^.]+$/, ""), media_type:detectType(data.publicUrl, file) }));
-    setUploading(false);
   };
 
   const saveCreative = async () => {
-    if (!upload.name && !upload.preview_url) { showToast("Додай назву або файл", "error"); return; }
-    const payload = {
+    if (!uploadFiles.length && !upload.preview_url) { showToast("Додай файли або URL", "error"); return; }
+    setUploading(true);
+
+    const tags = uploadTags.split(",").map(t => t.trim()).filter(Boolean);
+    const selectedUploadFolder = folderCards.find(f => f.key === uploadFolderKey);
+    const basePayload = {
       user_id:user.id,
-      name:upload.name || "creative",
-      preview_url:upload.preview_url,
       domain_id:upload.domain_id || null,
       status:upload.status || "тест",
-      buyer:upload.buyer || selectedFolder?.name || "",
+      buyer:upload.buyer || (selectedUploadFolder?.id || selectedUploadFolder?.name === "Unsorted" ? "" : selectedUploadFolder?.name || ""),
       spend:0,
       revenue:0,
       ctr:0,
@@ -218,30 +240,57 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
       ftd:0,
       added_date:new Date().toISOString().slice(0,10),
       folder_id:upload.folder_id || null,
-      media_type:upload.media_type,
       orientation:upload.orientation,
       duration_bucket:upload.duration_bucket || null,
       archived:false,
       launched_count:0,
+      tags,
     };
 
-    let { error } = await supabase.from("creatives").insert([payload]);
-    if (error && /folder_id|media_type|orientation|duration_bucket|archived|launched_count/i.test(error.message)) {
-      const fallback = { ...payload };
-      delete fallback.folder_id;
-      delete fallback.media_type;
-      delete fallback.orientation;
-      delete fallback.duration_bucket;
-      delete fallback.archived;
-      delete fallback.launched_count;
-      ({ error } = await supabase.from("creatives").insert([fallback]));
+    const payloads = [];
+    if (upload.preview_url && !uploadFiles.length) {
+      payloads.push({ ...basePayload, name:upload.name || "creative", preview_url:upload.preview_url, media_type:detectType(upload.preview_url) });
     }
 
+    for (const file of uploadFiles) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}-${safeName}`;
+      const { error } = await supabase.storage.from("creatives").upload(path, file, { upsert:false });
+      if (error) {
+        showToast("Upload error: " + error.message, "error");
+        setUploading(false);
+        return;
+      }
+      const { data } = supabase.storage.from("creatives").getPublicUrl(path);
+      payloads.push({
+        ...basePayload,
+        name:uploadFiles.length === 1 && upload.name ? upload.name : file.name.replace(/\.[^.]+$/, ""),
+        preview_url:data.publicUrl,
+        media_type:detectType(data.publicUrl, file),
+      });
+    }
+
+    let { error } = await supabase.from("creatives").insert(payloads);
+    if (error && /folder_id|media_type|orientation|duration_bucket|archived|launched_count|tags/i.test(error.message)) {
+      const fallback = payloads.map(payload => {
+        const copy = { ...payload };
+        delete copy.folder_id;
+        delete copy.media_type;
+        delete copy.orientation;
+        delete copy.duration_bucket;
+        delete copy.archived;
+        delete copy.launched_count;
+        delete copy.tags;
+        return copy;
+      });
+      ({ error } = await supabase.from("creatives").insert(fallback));
+    }
+
+    setUploading(false);
     if (error) showToast("Помилка збереження: " + error.message, "error");
     else {
-      showToast("Креатив додано");
-      setUploadOpen(false);
-      setUpload(emptyUpload);
+      showToast(`Завантажено ${payloads.length} креативів`);
+      closeUpload();
       fetchData();
     }
   };
@@ -352,25 +401,90 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
       </div>
 
       {uploadOpen && (
-        <Modal title="Завантажити креатив" onClose={()=>setUploadOpen(false)}>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-            <div><label style={{ fontWeight:800, fontSize:12 }}>Назва</label><input style={S.inp} value={upload.name} onChange={e=>setUpload(p=>({...p, name:e.target.value}))} /></div>
-            <div><label style={{ fontWeight:800, fontSize:12 }}>Папка</label><select style={S.inp} value={upload.folder_id} onChange={e=>setUpload(p=>({...p, folder_id:e.target.value}))}><option value="">Unsorted / buyer</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
-            <div><label style={{ fontWeight:800, fontSize:12 }}>Тип</label><select style={S.inp} value={upload.media_type} onChange={e=>setUpload(p=>({...p, media_type:e.target.value}))}><option value="photo">Фото</option><option value="video">Відео</option></select></div>
-            <div><label style={{ fontWeight:800, fontSize:12 }}>Орієнтація</label><select style={S.inp} value={upload.orientation} onChange={e=>setUpload(p=>({...p, orientation:e.target.value}))}><option value="square">Квадрат</option><option value="portrait">Портрет</option><option value="album">Альбом</option></select></div>
-            <div><label style={{ fontWeight:800, fontSize:12 }}>Тривалість</label><select style={S.inp} value={upload.duration_bucket} onChange={e=>setUpload(p=>({...p, duration_bucket:e.target.value}))}><option value="">—</option><option value="lt30">&lt; 30 сек</option><option value="30to120">30 сек - 2 хв</option><option value="gt120">&gt; 2 хв</option></select></div>
-            <div><label style={{ fontWeight:800, fontSize:12 }}>Домен</label><select style={S.inp} value={upload.domain_id} onChange={e=>setUpload(p=>({...p, domain_id:e.target.value}))}><option value="">—</option>{domains.map(d=><option key={d.id} value={d.id}>{d.domain}</option>)}</select></div>
+        <div style={{ position:"fixed", inset:0, zIndex:1000, background:"#fff", color:"#202124", overflowY:"auto" }}>
+          <button
+            onClick={closeUpload}
+            disabled={uploading}
+            style={{ position:"fixed", top:0, right:0, width:72, height:72, border:"3px solid #9ca3af", borderRadius:18, background:"#fff", color:"#202124", fontSize:42, lineHeight:1, cursor:uploading ? "not-allowed" : "pointer", zIndex:1001 }}
+            aria-label="Закрити"
+          >×</button>
+
+          <div style={{ padding:"42px 44px 48px", maxWidth:1240 }}>
+            <h1 style={{ margin:"0 0 56px", fontSize:32, lineHeight:1.15, fontWeight:900 }}>Завантаження креативів</h1>
+
+            <div
+              onClick={()=>fileRef.current?.click()}
+              onDragEnter={e=>{ e.preventDefault(); setDragOver(true); }}
+              onDragOver={e=>{ e.preventDefault(); setDragOver(true); }}
+              onDragLeave={e=>{ e.preventDefault(); setDragOver(false); }}
+              onDrop={e=>{ e.preventDefault(); setDragOver(false); addUploadFiles(e.dataTransfer.files); }}
+              style={{ height:430, border:`3px dashed ${dragOver ? "#60a5fa" : "#93c5fd"}`, borderRadius:12, background:dragOver ? "#dbeafe" : "#eff6ff", display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", cursor:"pointer", userSelect:"none" }}
+            >
+              <input ref={fileRef} type="file" multiple accept="image/*,video/*" style={{ display:"none" }} onChange={e=>addUploadFiles(e.target.files)} />
+              <div style={{ color:"#9ca3af", fontSize:64, lineHeight:1, marginBottom:36 }}>☁</div>
+              <div style={{ color:"#4b5563", fontSize:26, fontWeight:500, marginBottom:24 }}>Перетягніть файли сюди</div>
+              <div style={{ color:"#9ca3af", fontSize:26 }}>або натисніть для вибору</div>
+              {uploadFiles.length > 0 && (
+                <div style={{ marginTop:28, background:"#fff", border:"1px solid #dbeafe", borderRadius:12, padding:"10px 16px", color:"#1d4ed8", fontSize:16, fontWeight:800 }}>
+                  Обрано файлів: {uploadFiles.length}
+                </div>
+              )}
+            </div>
+
+            {uploadFiles.length > 0 && (
+              <div style={{ marginTop:18, border:"1px solid #e5e7eb", borderRadius:10, overflow:"hidden" }}>
+                {uploadFiles.slice(0, 6).map((file, idx) => (
+                  <div key={`${file.name}-${idx}`} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderBottom:idx === Math.min(uploadFiles.length, 6) - 1 ? "none" : "1px solid #f3f4f6", color:"#4b5563", fontSize:14 }}>
+                    <span>{file.type.startsWith("video/") ? "🎬" : "🖼"}</span>
+                    <span style={{ fontWeight:700 }}>{file.name}</span>
+                    <span style={{ marginLeft:"auto", color:"#9ca3af" }}>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                  </div>
+                ))}
+                {uploadFiles.length > 6 && <div style={{ padding:"10px 14px", color:"#6b7280" }}>+ ще {uploadFiles.length - 6} файлів</div>}
+              </div>
+            )}
+
+            <div style={{ marginTop:36 }}>
+              <div style={{ color:"#6b7280", fontWeight:900, fontSize:20, marginBottom:18 }}>Папка</div>
+              <div style={{ border:"1px solid #d1d5db", borderRadius:8, overflow:"hidden", maxHeight:365, overflowY:"auto" }}>
+                {folderCards.map(folder => {
+                  const selected = uploadFolderKey === folder.key;
+                  const isUnsorted = folder.name === "Unsorted";
+                  return (
+                    <button
+                      key={folder.key}
+                      onClick={()=>selectUploadFolder(folder)}
+                      style={{ width:"100%", border:"none", background:selected ? "#eff6ff" : "#fff", display:"flex", alignItems:"center", gap:12, padding:"14px 56px", color:selected ? "#1e40af" : "#3f3f46", fontSize:24, fontWeight:selected ? 900 : 500, cursor:"pointer", textAlign:"left" }}
+                    >
+                      <span style={{ color:"#f4b400", fontSize:24 }}>{isUnsorted ? "🗂" : "📁"}</span>
+                      <span>{isUnsorted ? "Без вказівки (Unsorted)" : folder.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginTop:36 }}>
+              <div style={{ color:"#6b7280", fontWeight:900, fontSize:20, marginBottom:18 }}>Теги (необов'язково)</div>
+              <input
+                style={{ width:"100%", boxSizing:"border-box", border:"1px solid #d1d5db", borderRadius:8, padding:"18px 22px", fontSize:26, color:"#3f3f46", outline:"none" }}
+                value={uploadTags}
+                onChange={e=>setUploadTags(e.target.value)}
+                placeholder="Додати тег..."
+              />
+            </div>
+
+            <div style={{ display:"flex", justifyContent:"flex-end", marginTop:56 }}>
+              <button
+                onClick={saveCreative}
+                disabled={uploading || uploadFiles.length === 0}
+                style={{ border:"none", borderRadius:12, background:uploading || uploadFiles.length === 0 ? "#93aef5" : "#2563eb", color:"#fff", fontSize:26, fontWeight:900, padding:"24px 42px", cursor:uploading || uploadFiles.length === 0 ? "not-allowed" : "pointer", minWidth:240 }}
+              >
+                {uploading ? "Завантажую…" : "Завантажити"}
+              </button>
+            </div>
           </div>
-          <div style={{ marginTop:12 }}><label style={{ fontWeight:800, fontSize:12 }}>URL</label><input style={S.inp} value={upload.preview_url} onChange={e=>setUpload(p=>({...p, preview_url:e.target.value, media_type:detectType(e.target.value)}))} placeholder="або завантаж файл нижче" /></div>
-          <div style={{ display:"flex", gap:10, alignItems:"center", marginTop:14 }}>
-            <input ref={fileRef} type="file" accept="image/*,video/*" style={{ display:"none" }} onChange={e=>handleFile(e.target.files?.[0])} />
-            <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={S.btnGhost}>{uploading ? "Завантажую…" : "Обрати файл"}</button>
-            {upload.preview_url && <span style={{ color:"#16a34a", fontWeight:800 }}>Файл/URL готовий</span>}
-            <div style={{ flex:1 }} />
-            <button onClick={()=>setUploadOpen(false)} style={S.btnGhost}>Скасувати</button>
-            <button onClick={saveCreative} style={S.btn}>Зберегти</button>
-          </div>
-        </Modal>
+        </div>
       )}
     </div>
   );
