@@ -317,7 +317,6 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
 
     let driveUploaded = 0;
     let driveFailed = 0;
-    const selectedUploadFolder = folderCards.find(f => f.key === uploadFolderKey);
     const driveFolderName = selectedUploadFolder?.name || "Unsorted";
 
     for (const creative of inserted) {
