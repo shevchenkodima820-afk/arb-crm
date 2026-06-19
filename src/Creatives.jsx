@@ -317,6 +317,7 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
 
     let driveUploaded = 0;
     let driveFailed = 0;
+    const driveErrors = [];
     const driveFolderName = selectedUploadFolder?.name || "Unsorted";
 
     for (const creative of inserted) {
@@ -338,12 +339,13 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
         }).eq("id", creative.id);
       } catch (driveError) {
         driveFailed += 1;
+        driveErrors.push(driveError.message || String(driveError));
         try { await supabase.from("creatives").update({ google_drive_error:driveError.message }).eq("id", creative.id); } catch {}
       }
     }
 
     setUploading(false);
-    showToast(driveFailed ? `Завантажено ${payloads.length}. Drive: ${driveUploaded} ок, ${driveFailed} помилок` : `Завантажено ${payloads.length} і скопійовано в Google Drive`);
+    showToast(driveFailed ? `Завантажено ${payloads.length}. Drive помилка: ${driveErrors[0] || `${driveFailed} помилок`}` : `Завантажено ${payloads.length} і скопійовано в Google Drive`, driveFailed ? "error" : "ok");
     closeUpload();
     fetchData();
   };
