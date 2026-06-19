@@ -49,6 +49,182 @@ async function callFbApi(token, endpoint, params, proxy) {
   return data;
 }
 
+
+async function launchFbCampaign(payload) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Немає активної сесії");
+
+  const res = await fetch('/api/fb-launch-campaign', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    const message = data?.error?.message || data?.error || `Launch error ${res.status}`;
+    throw new Error(message);
+  }
+  return data;
+}
+
+const toLocalDatetimeValue = (date = new Date(Date.now() + 60 * 60 * 1000)) => {
+  const pad = n => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+const LaunchCampaignModal = ({ setup, data, proxy, onClose, onDone }) => {
+  const firstAccount = data?.accounts?.[0]?.id || "";
+  const firstPage = data?.pages?.[0]?.id || "";
+  const firstPixel = data?.pixels?.[0]?.id || "";
+  const [form, setForm] = useState({
+    account_id: firstAccount,
+    page_id: firstPage,
+    pixel_id: firstPixel,
+    campaign_name: `${setup.name} ${new Date().toLocaleDateString("uk-UA")}`,
+    daily_budget: "10",
+    geo: "UA",
+    age_min: "18",
+    age_max: "65",
+    link_url: "",
+    image_url: "",
+    message: "",
+    headline: "",
+    description: "",
+    cta: "LEARN_MORE",
+    schedule_mode: "now",
+    start_time: toLocalDatetimeValue(),
+  });
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  const set = key => e => setForm(prev => ({ ...prev, [key]: e.target.value }));
+
+  const submit = async () => {
+    setLoading(true);
+    setError("");
+    setResult(null);
+    try {
+      const payload = {
+        token: setup.token,
+        setup_id: setup.id,
+        proxy,
+        account_id: form.account_id,
+        page_id: form.page_id,
+        pixel_id: form.pixel_id || null,
+        campaign_name: form.campaign_name,
+        daily_budget: Number(form.daily_budget),
+        geo: form.geo,
+        age_min: Number(form.age_min),
+        age_max: Number(form.age_max),
+        link_url: form.link_url,
+        image_url: form.image_url || null,
+        message: form.message,
+        headline: form.headline,
+        description: form.description || null,
+        cta: form.cta,
+        schedule: {
+          mode: form.schedule_mode,
+          start_time: form.schedule_mode === "at_time" ? new Date(form.start_time).toISOString() : undefined,
+        },
+      };
+      const launchResult = await launchFbCampaign(payload);
+      setResult(launchResult);
+      if (onDone) onDone(launchResult);
+    } catch (e) {
+      setError(e.message);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <Modal title="🚀 Залив кампанії" onClose={onClose}>
+      <div>
+        <div style={{ background:"#0f1117", border:"1px solid #1e2330", borderRadius:10, padding:12, marginBottom:14, color:"#94a3b8", fontSize:12 }}>
+          Кампанія, ad set і ad створюються зі статусом <b style={{ color:"#4ade80" }}>ACTIVE</b>. Якщо вибраний майбутній час — старт задається через <code>adset.start_time</code>.
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+          <Field label="Кабінет">
+            <select style={{ ...S.inp, cursor:"pointer" }} value={form.account_id} onChange={set("account_id")}>
+              {(data?.accounts || []).map(acc => <option key={acc.id} value={acc.id}>{acc.name} · {acc.id}</option>)}
+            </select>
+          </Field>
+          <Field label="Fan Page">
+            <select style={{ ...S.inp, cursor:"pointer" }} value={form.page_id} onChange={set("page_id")}>
+              {(data?.pages || []).map(page => <option key={page.id} value={page.id}>{page.name} · {page.id}</option>)}
+            </select>
+          </Field>
+          <Field label="Pixel optional">
+            <select style={{ ...S.inp, cursor:"pointer" }} value={form.pixel_id} onChange={set("pixel_id")}>
+              <option value="">— без pixel —</option>
+              {(data?.pixels || []).map(px => <option key={px.id} value={px.id}>{px.name || "Pixel"} · {px.id}</option>)}
+            </select>
+          </Field>
+          <Field label="Назва кампанії"><input style={S.inp} value={form.campaign_name} onChange={set("campaign_name")} /></Field>
+          <Field label="Денний бюджет $"><input style={S.inp} type="number" min="1" step="0.01" value={form.daily_budget} onChange={set("daily_budget")} /></Field>
+          <Field label="GEO країни"><input style={S.inp} value={form.geo} onChange={set("geo")} placeholder="UA або UA,PL" /></Field>
+          <Field label="Вік від"><input style={S.inp} type="number" min="13" max="65" value={form.age_min} onChange={set("age_min")} /></Field>
+          <Field label="Вік до"><input style={S.inp} type="number" min="13" max="65" value={form.age_max} onChange={set("age_max")} /></Field>
+        </div>
+
+        <Field label="URL ленду / PWA"><input style={S.inp} value={form.link_url} onChange={set("link_url")} placeholder="https://example.com" /></Field>
+        <Field label="Image URL optional"><input style={S.inp} value={form.image_url} onChange={set("image_url")} placeholder="https://.../image.jpg" /></Field>
+        <Field label="Primary Text"><textarea style={{ ...S.inp, minHeight:78, resize:"vertical" }} value={form.message} onChange={set("message")} placeholder="Текст оголошення" /></Field>
+        <Field label="Headline"><input style={S.inp} value={form.headline} onChange={set("headline")} placeholder="Заголовок" /></Field>
+        <Field label="Description optional"><input style={S.inp} value={form.description} onChange={set("description")} placeholder="Опис" /></Field>
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+          <Field label="CTA">
+            <select style={{ ...S.inp, cursor:"pointer" }} value={form.cta} onChange={set("cta")}>
+              {[
+                "LEARN_MORE", "SIGN_UP", "DOWNLOAD", "SHOP_NOW", "CONTACT_US", "APPLY_NOW", "SUBSCRIBE"
+              ].map(cta => <option key={cta}>{cta}</option>)}
+            </select>
+          </Field>
+          <Field label="Старт">
+            <select style={{ ...S.inp, cursor:"pointer" }} value={form.schedule_mode} onChange={set("schedule_mode")}>
+              <option value="now">Зразу відкрут</option>
+              <option value="at_time">На конкретний час</option>
+              <option value="midnight_account">В 00:00 по кабінету</option>
+            </select>
+          </Field>
+        </div>
+
+        {form.schedule_mode === "at_time" && (
+          <Field label="Конкретний час">
+            <input style={S.inp} type="datetime-local" value={form.start_time} onChange={set("start_time")} />
+          </Field>
+        )}
+
+        {error && <div style={{ background:"#dc262622", color:"#f87171", border:"1px solid #dc262644", borderRadius:8, padding:"10px 12px", fontSize:13, marginBottom:12 }}>{error}</div>}
+
+        {result && (
+          <div style={{ background:"#16a34a22", color:"#4ade80", border:"1px solid #16a34a55", borderRadius:8, padding:"10px 12px", fontSize:13, marginBottom:12 }}>
+            <div style={{ fontWeight:700, marginBottom:4 }}>Створено ✓</div>
+            <div>Campaign: <code>{result.campaign_id}</code></div>
+            <div>AdSet: <code>{result.adset_id}</code></div>
+            <div>Creative: <code>{result.creative_id}</code></div>
+            <div>Ad: <code>{result.ad_id}</code></div>
+            {result.scheduled_start_time && <div>Start: <code>{result.scheduled_start_time}</code>{result.timezone ? ` (${result.timezone})` : ""}</div>}
+          </div>
+        )}
+
+        <div style={{ display:"flex", justifyContent:"flex-end", gap:10 }}>
+          <button onClick={onClose} style={S.btnGhost}>Закрити</button>
+          <button onClick={submit} disabled={loading || !form.account_id || !form.page_id || !form.link_url || !form.message || !form.headline} style={{ ...S.btnGreen, opacity:loading ? 0.7 : 1 }}>
+            {loading ? "Створюю…" : form.schedule_mode === "now" ? "🚀 Запустити зараз" : "🕒 Запланувати"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
 const STATUS_MAP = { 1:"живий", 2:"забанений", 3:"на прогріві", 7:"на прогріві", 8:"на прогріві", 9:"на прогріві", 100:"на прогріві", 101:"на прогріві", 201:"забанений" };
 const STATUS_COLOR = { "живий":"#4ade80", "забанений":"#f87171", "на прогріві":"#fbbf24" };
 
@@ -107,6 +283,7 @@ const SetupCard = ({ setup, buyers, isAdmin, onEdit, onDelete, onRefresh }) => {
   const [data, setData] = useState(null); // { accounts, pages, pixels }
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState(null);
+  const [launchOpen, setLaunchOpen] = useState(false);
 
   const showToast = (msg, type="ok") => { setToast({msg,type}); setTimeout(()=>setToast(null),3000); };
 
@@ -216,6 +393,7 @@ const SetupCard = ({ setup, buyers, isAdmin, onEdit, onDelete, onRefresh }) => {
         {data && <span style={{ color:"#fbbf24", fontWeight:700, fontSize:14 }}>${totalSpend.toFixed(2)} сьогодні</span>}
         <div style={{ display:"flex", gap:8 }} onClick={e=>e.stopPropagation()}>
           <button onClick={()=>{ loadData(); }} style={{ ...S.btnGreen, padding:"6px 12px" }} title="Оновити">🔄</button>
+          {data && <button onClick={()=>setLaunchOpen(true)} style={{ ...S.btnGreen, padding:"6px 12px", fontSize:12 }}>🚀 Залив</button>}
           {data && <button onClick={syncToDb} disabled={syncing} style={{ ...S.btn, padding:"6px 12px", fontSize:12, opacity:syncing?0.7:1 }}>{syncing?"…":"💾 Зберегти"}</button>}
           {isAdmin && <>
             <button onClick={onEdit} style={{ ...S.btnGhost, padding:"6px 10px" }}>✏️</button>
@@ -223,6 +401,16 @@ const SetupCard = ({ setup, buyers, isAdmin, onEdit, onDelete, onRefresh }) => {
           </>}
         </div>
       </div>
+
+      {launchOpen && data && (
+        <LaunchCampaignModal
+          setup={setup}
+          data={data}
+          proxy={proxy}
+          onClose={()=>setLaunchOpen(false)}
+          onDone={()=>showToast("Кампанію створено ✓")}
+        />
+      )}
 
       {/* Expanded content */}
       {expanded && (
