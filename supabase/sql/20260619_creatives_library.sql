@@ -58,3 +58,4 @@ ALTER TABLE public.creatives
 
 CREATE INDEX IF NOT EXISTS idx_creatives_folder_id ON public.creatives(folder_id);
 CREATE INDEX IF NOT EXISTS idx_creatives_media_filters ON public.creatives(media_type, orientation, duration_bucket, archived);
+

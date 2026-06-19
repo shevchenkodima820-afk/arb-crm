@@ -82,12 +82,41 @@ function detectType(url = "", file) {
   return "photo";
 }
 
+
+
 function defaultFolderName(row) {
   return row.folder_name || row.buyer || "Unsorted";
 }
 
 function field(row, key, fallback = "") {
   return row[key] ?? fallback;
+}
+
+function safeFileName(name = "creative") {
+  return String(name || "creative")
+    .replace(/[\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120) || "creative";
+}
+
+function fileExtFromUrl(url = "", mediaType = "photo") {
+  const clean = String(url || "").split("?")[0].toLowerCase();
+  const match = clean.match(/\.([a-z0-9]{2,8})$/);
+  if (match) return `.${match[1]}`;
+  return mediaType === "video" ? ".mp4" : ".jpg";
+}
+
+function storagePathFromPublicUrl(url = "") {
+  try {
+    const parsed = new URL(url);
+    const marker = "/storage/v1/object/public/creatives/";
+    const index = parsed.pathname.indexOf(marker);
+    if (index === -1) return null;
+    return decodeURIComponent(parsed.pathname.slice(index + marker.length));
+  } catch {
+    return null;
+  }
 }
 
 export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
@@ -270,7 +299,8 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
       });
     }
 
-    let { error } = await supabase.from("creatives").insert(payloads);
+    let inserted = [];
+    let { data:insertedData, error } = await supabase.from("creatives").insert(payloads).select();
     if (error && /folder_id|media_type|orientation|duration_bucket|archived|launched_count|tags/i.test(error.message)) {
       const fallback = payloads.map(payload => {
         const copy = { ...payload };
@@ -283,16 +313,70 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
         delete copy.tags;
         return copy;
       });
-      ({ error } = await supabase.from("creatives").insert(fallback));
+      ({ data:insertedData, error } = await supabase.from("creatives").insert(fallback).select());
+    }
+    inserted = insertedData || [];
+
+    if (error) {
+      setUploading(false);
+      showToast("Помилка збереження: " + error.message, "error");
+      return;
     }
 
     setUploading(false);
-    if (error) showToast("Помилка збереження: " + error.message, "error");
-    else {
-      showToast(`Завантажено ${payloads.length} креативів`);
-      closeUpload();
-      fetchData();
+    showToast(`Завантажено ${payloads.length}. Креативи збережено в CRM.`);
+    closeUpload();
+    fetchData();
+  };
+
+  const downloadCreative = async (creative) => {
+    if (!creative?.preview_url) { showToast("У креатива немає файлу для скачування", "error"); return; }
+
+    const mediaType = field(creative, "media_type", detectType(creative.preview_url));
+    const ext = fileExtFromUrl(creative.preview_url, mediaType);
+    const filename = safeFileName(creative.name || "creative");
+    const finalName = filename.toLowerCase().endsWith(ext.toLowerCase()) ? filename : `${filename}${ext}`;
+
+    try {
+      const response = await fetch(creative.preview_url, { mode:"cors" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = finalName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    } catch (e) {
+      window.open(creative.preview_url, "_blank", "noopener,noreferrer");
+      showToast("Не зміг скачати напряму — відкрив файл у новій вкладці", "error");
     }
+  };
+
+  const deleteCreative = async (creative) => {
+    if (!isAdmin) { showToast("Видаляти креативи може тільки адмін", "error"); return; }
+    if (!creative?.id) return;
+    const ok = confirm(`Видалити креатив "${creative.name || "creative"}"? Це прибере запис із CRM${creative.preview_url ? " і спробує видалити файл зі Storage" : ""}.`);
+    if (!ok) return;
+
+    setLoading(true);
+    let storageWarning = "";
+    const storagePath = storagePathFromPublicUrl(creative.preview_url);
+    if (storagePath) {
+      const { error:storageError } = await supabase.storage.from("creatives").remove([storagePath]);
+      if (storageError) storageWarning = ` Файл у Storage не видалився: ${storageError.message}`;
+    }
+
+    const { error } = await supabase.from("creatives").delete().eq("id", creative.id);
+    setLoading(false);
+    if (error) {
+      showToast("Помилка видалення: " + error.message, "error");
+      return;
+    }
+    showToast(`Креатив видалено.${storageWarning}`);
+    fetchData();
   };
 
   const archiveCreative = async (creative) => {
@@ -379,18 +463,23 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
                       <div style={{ padding:12 }}>
                         <div style={{ fontWeight:900, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.name || "creative"}</div>
                         <div style={{ color:"#9ca3af", fontSize:12, marginTop:4 }}>{mediaType} · {c.added_date || c.created_at?.slice(0,10) || "—"}</div>
-                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:10 }}>
-                          <span style={{ color:c.status === "активний" ? "#16a34a" : "#6b7280", fontSize:12, fontWeight:800 }}>{c.status}</span>
-                          <button onClick={()=>archiveCreative(c)} style={{ border:"none", background:"transparent", cursor:"pointer", color:"#6b7280" }}>{c.archived ? "↩" : "Архів"}</button>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:10, flexWrap:"wrap" }}>
+                          <span style={{ color:c.status === "активний" ? "#16a34a" : "#6b7280", fontSize:12, fontWeight:800, marginRight:"auto" }}>{c.status}</span>
+                          <button onClick={()=>downloadCreative(c)} style={{ border:"none", background:"#eff6ff", color:"#2563eb", borderRadius:8, padding:"5px 8px", cursor:"pointer", fontSize:12, fontWeight:900 }}>Скачати</button>
+                          <button onClick={()=>archiveCreative(c)} style={{ border:"none", background:"transparent", cursor:"pointer", color:"#6b7280", fontSize:12, fontWeight:800 }}>{c.archived ? "↩" : "Архів"}</button>
+                          {isAdmin && <button onClick={()=>deleteCreative(c)} style={{ border:"none", background:"#fee2e2", color:"#dc2626", borderRadius:8, padding:"5px 8px", cursor:"pointer", fontSize:12, fontWeight:900 }}>Видалити</button>}
                         </div>
                       </div>
                     </div>
                   ) : (
                     <div key={c.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 8px", borderBottom:"1px solid #f3f4f6" }}>
-                      <div style={{ width:54, height:54, borderRadius:8, overflow:"hidden", background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center" }}>{c.preview_url ? <img src={c.preview_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : "🖼"}</div>
+                      <div style={{ width:54, height:54, borderRadius:8, overflow:"hidden", background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center" }}>{c.preview_url ? mediaType === "video" ? <video src={c.preview_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} muted /> : <img src={c.preview_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : "🖼"}</div>
                       <div style={{ fontWeight:900 }}>{c.name}</div>
                       <div style={{ color:"#9ca3af" }}>{mediaType}</div>
                       <div style={{ marginLeft:"auto", color:"#9ca3af" }}>{c.added_date || c.created_at?.slice(0,10)}</div>
+                      <button onClick={()=>downloadCreative(c)} style={{ border:"none", background:"#eff6ff", color:"#2563eb", borderRadius:8, padding:"7px 10px", cursor:"pointer", fontWeight:900 }}>Скачати</button>
+                      <button onClick={()=>archiveCreative(c)} style={{ border:"none", background:"#f3f4f6", color:"#6b7280", borderRadius:8, padding:"7px 10px", cursor:"pointer", fontWeight:800 }}>{c.archived ? "Повернути" : "Архів"}</button>
+                      {isAdmin && <button onClick={()=>deleteCreative(c)} style={{ border:"none", background:"#fee2e2", color:"#dc2626", borderRadius:8, padding:"7px 10px", cursor:"pointer", fontWeight:900 }}>Видалити</button>}
                     </div>
                   );
                 })}
