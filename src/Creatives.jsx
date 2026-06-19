@@ -367,7 +367,7 @@ export default function CreativesLibraryTab({ user, isAdmin, domains = [] }) {
     }
 
     setUploading(false);
-    showToast(driveFailed ? `Завантажено ${payloads.length}. Drive помилка: ${driveErrors[0] || `${driveFailed} помилок`}` : `Завантажено ${payloads.length} і скопійовано в Google Drive`, driveFailed ? "error" : "ok");
+    showToast(driveFailed ? `Завантажено ${payloads.length}. Drive помилка [oauth-session-v2]: ${driveErrors[0] || `${driveFailed} помилок`}` : `Завантажено ${payloads.length} і скопійовано в Google Drive`, driveFailed ? "error" : "ok");
     closeUpload();
     fetchData();
   };
