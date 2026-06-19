@@ -302,6 +302,6 @@ export default async function handler(req, res) {
       version: 'drive-oauth-noauth-v3',
     });
   } catch (e) {
-    return res.status(e.statusCode || 400).json({ error: e.message });
+    return res.status(e.statusCode || 400).json({ error: `[api-v4] ${e.message}`, version: 'drive-oauth-noauth-v4' });
   }
 }
