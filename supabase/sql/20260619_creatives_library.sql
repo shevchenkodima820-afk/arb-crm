@@ -54,7 +54,13 @@ ALTER TABLE public.creatives
   ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS launched_count INTEGER DEFAULT 0,
   ADD COLUMN IF NOT EXISTS last_launched_at TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT ARRAY[]::TEXT[];
+  ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT ARRAY[]::TEXT[],
+  ADD COLUMN IF NOT EXISTS google_drive_file_id TEXT,
+  ADD COLUMN IF NOT EXISTS google_drive_web_url TEXT,
+  ADD COLUMN IF NOT EXISTS google_drive_folder_id TEXT,
+  ADD COLUMN IF NOT EXISTS google_drive_error TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_creatives_folder_id ON public.creatives(folder_id);
 CREATE INDEX IF NOT EXISTS idx_creatives_media_filters ON public.creatives(media_type, orientation, duration_bucket, archived);
+
+CREATE INDEX IF NOT EXISTS idx_creatives_google_drive_file_id ON public.creatives(google_drive_file_id);
