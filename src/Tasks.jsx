@@ -45,7 +45,7 @@ function overdue(task) { return task.due_at && !["done", "canceled"].includes(ta
 function dueSoon(task) { const t = task.due_at ? new Date(task.due_at).getTime() : 0; return t && !overdue(task) && !["done", "canceled"].includes(task.status) && t < Date.now() + 24*60*60*1000; }
 
 function TaskForm({ initial={}, profiles=[], user, onSave, onClose }) {
-  const [f, setF] = useState({ title:"", description:"", status:"open", priority:"medium", assigned_to:"", entity_type:"general", entity_id:"", due_at:"", ...initial, due_at:toLocalValue(initial.due_at) });
+  const [f, setF] = useState({ title:"", description:"", status:"open", priority:"medium", assigned_to:"", entity_type:"general", entity_id:"", ...initial, due_at:toLocalValue(initial.due_at) });
   const set = k => e => setF(p => ({ ...p, [k]:e.target.value }));
   const submit = () => {
     if (!f.title.trim()) return;
