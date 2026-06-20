@@ -376,7 +376,7 @@ const SetupForm = ({ initial={}, buyers, setupFolders=[], onSave, onClose }) => 
     name:"", token:"", buyer_id:"", folder_id:"",
     proxy_type:"socks5", proxy_host:"", proxy_port:"",
     proxy_user:"", proxy_pass:"",
-    notes:"", tags:[], tags_text:tagsToText(initial.tags), archived:false,
+    notes:"", tags:[], archived:false,
     ...initial,
     tags_text:tagsToText(initial.tags),
   }));
