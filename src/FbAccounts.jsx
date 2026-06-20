@@ -37,6 +37,7 @@ const ACTION_LABELS = {
   buyer_change: "байєр",
   bulk_update: "масова дія",
   check: "чек",
+  proxy_check: "proxy",
 };
 
 const safeSnapshot = (row, keys) => keys.reduce((acc, key) => {
@@ -82,7 +83,7 @@ const AuditTrail = ({ logs=[], users=[] }) => {
   );
 };
 
-const BulkBar = ({ selectedCount, onSelectAll, onClear, folders=[], buyers=[], statusOptions=null, onMoveFolder, onAssignBuyer, onChangeStatus, onDelete, entityLabel="елементів" }) => {
+const BulkBar = ({ selectedCount, onSelectAll, onClear, folders=[], buyers=[], statusOptions=null, onMoveFolder, onAssignBuyer, onChangeStatus, onCheckProxy, onDelete, entityLabel="елементів" }) => {
   if (!selectedCount) {
     return (
       <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12, color:"#64748b", fontSize:12 }}>
@@ -116,8 +117,50 @@ const BulkBar = ({ selectedCount, onSelectAll, onClear, folders=[], buyers=[], s
           {Object.entries(statusOptions).map(([key,label])=><option key={key} value={key}>{label}</option>)}
         </select>
       )}
+      {onCheckProxy && <button onClick={onCheckProxy} style={{ ...S.btnGhost, padding:"7px 10px", color:"#93c5fd" }}>🌐 Check proxy</button>}
       {onDelete && <button onClick={onDelete} style={{ ...S.btnGhost, padding:"7px 10px", color:"#f87171" }}>🗑 Видалити</button>}
     </div>
+  );
+};
+
+
+function entityProxy(row) {
+  if (!row?.proxy_host) return null;
+  return {
+    type: row.proxy_type || "socks5",
+    host: row.proxy_host,
+    port: row.proxy_port,
+    user: row.proxy_user,
+    pass: row.proxy_pass,
+  };
+}
+
+async function checkProxyApi(proxy) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Немає активної сесії");
+
+  const res = await fetch('/api/proxy-check', {
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      Authorization:`Bearer ${session.access_token}`,
+    },
+    body:JSON.stringify({ proxy }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || `Proxy check error ${res.status}`);
+  return data;
+}
+
+const ProxyHealth = ({ row }) => {
+  const status = row?.proxy_status || "unknown";
+  const color = status === "ok" ? "#4ade80" : status === "dead" ? "#f87171" : "#64748b";
+  const label = status === "ok" ? "proxy ok" : status === "dead" ? "proxy dead" : "proxy ?";
+  return (
+    <span style={{ display:"inline-flex", alignItems:"center", gap:5, color, background:`${color}18`, border:`1px solid ${color}44`, borderRadius:999, padding:"2px 8px", fontSize:11, fontWeight:900 }}>
+      🌐 {label}{row?.proxy_ip ? ` · ${row.proxy_ip}` : ""}{row?.proxy_country ? ` · ${row.proxy_country}` : ""}{row?.proxy_latency_ms ? ` · ${row.proxy_latency_ms}ms` : ""}
+    </span>
   );
 };
 
@@ -378,7 +421,7 @@ const SetupForm = ({ initial={}, buyers, setupFolders=[], onSave, onClose }) => 
 };
 
 // ─── SETUP CARD (розкривається) ───────────────────────────────────────────
-const SetupCard = ({ setup, buyers, setupFolders, auditLogs=[], selected=false, onToggleSelect, isAdmin, onEdit, onDelete, onRefresh }) => {
+const SetupCard = ({ setup, buyers, setupFolders, auditLogs=[], selected=false, onToggleSelect, isAdmin, onCheckProxy, checkingProxy=false, onEdit, onDelete, onRefresh }) => {
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null); // { accounts, pages, pixels }
@@ -493,10 +536,13 @@ const SetupCard = ({ setup, buyers, setupFolders, auditLogs=[], selected=false, 
             <span style={{ color:"#60a5fa" }}>{buyer?.full_name||"не призначений"}</span>
             {" · "}
             <span style={{ color:"#334155", fontFamily:"monospace" }}>{setup.token?.slice(0,16)}…</span>
+            {" · "}
+            <ProxyHealth row={setup} />
           </div>
         </div>
         {data && <span style={{ color:"#fbbf24", fontWeight:700, fontSize:14 }}>${totalSpend.toFixed(2)} сьогодні</span>}
         <div style={{ display:"flex", gap:8 }} onClick={e=>e.stopPropagation()}>
+          <button onClick={()=>onCheckProxy(setup)} disabled={checkingProxy} style={{ ...S.btnGhost, padding:"6px 10px", color:"#93c5fd", opacity:checkingProxy?0.65:1 }} title="Перевірити proxy">{checkingProxy ? "…" : "🌐"}</button>
           <button onClick={()=>{ loadData(); }} style={{ ...S.btnGreen, padding:"6px 12px" }} title="Оновити">🔄</button>
           {data && <button onClick={()=>setLaunchOpen(true)} style={{ ...S.btnGreen, padding:"6px 12px", fontSize:12 }}>🚀 Залив</button>}
           {data && <button onClick={syncToDb} disabled={syncing} style={{ ...S.btn, padding:"6px 12px", fontSize:12, opacity:syncing?0.7:1 }}>{syncing?"…":"💾 Зберегти"}</button>}
@@ -1015,7 +1061,7 @@ const FarmAccountsTable = ({ accounts }) => {
   );
 };
 
-const FarmRow = ({ farm, farmAccounts, auditLogs=[], buyers, farmFolders, isAdmin, selected=false, onToggleSelect, onEdit, onDelete, onCheck, onImportAccounts, checking }) => {
+const FarmRow = ({ farm, farmAccounts, auditLogs=[], buyers, farmFolders, isAdmin, selected=false, onToggleSelect, onEdit, onDelete, onCheck, onCheckProxy, checking, checkingProxy=false, onImportAccounts }) => {
   const [expanded, setExpanded] = useState(false);
   const buyer = buyers.find(b => b.id === farm.buyer_id);
   const folder = farmFolders.find(f => f.id === farm.folder_id);
@@ -1042,6 +1088,7 @@ const FarmRow = ({ farm, farmAccounts, auditLogs=[], buyers, farmFolders, isAdmi
             <span>🍪 {maskSecret(farm.cookie_data)}</span>
             <span>🔑 {farm.access_token ? "token є" : "без token"}</span>
             <span>🔒 {proxyLabel(farm)}</span>
+            <ProxyHealth row={farm} />
             <span>📊 {accounts.length} каб. / 🟢 {aliveCount} / 🔴 {bannedCount}</span>
             {farm.last_check_at && <span>🕒 {new Date(farm.last_check_at).toLocaleString("uk-UA")}</span>}
           </div>
@@ -1049,6 +1096,7 @@ const FarmRow = ({ farm, farmAccounts, auditLogs=[], buyers, farmFolders, isAdmi
           {farm.notes && <div style={{ marginTop:5, color:"#64748b", fontSize:12 }}>📝 {farm.notes}</div>}
         </div>
         <div style={{ display:"flex", gap:8 }} onClick={e=>e.stopPropagation()}>
+          <button onClick={()=>onCheckProxy(farm)} disabled={checkingProxy} style={{ ...S.btnGhost, padding:"7px 10px", color:"#93c5fd", opacity:checkingProxy ? 0.65 : 1 }}>{checkingProxy ? "…" : "🌐 Proxy"}</button>
           <button onClick={()=>onCheck(farm)} disabled={checking} style={{ ...S.btnGreen, padding:"7px 10px", opacity:checking ? 0.65 : 1 }}>{checking ? "чекаю…" : "🔍 Чек"}</button>
           {isAdmin && <button onClick={()=>onImportAccounts(farm)} style={{ ...S.btnGhost, padding:"7px 10px" }}>+ Кабінети</button>}
           {isAdmin && <button onClick={onEdit} style={{ ...S.btnGhost, padding:"7px 10px" }}>✏️</button>}
@@ -1071,6 +1119,7 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
   const [bulkOpen, setBulkOpen] = useState(false);
   const [accountImportFarm, setAccountImportFarm] = useState(null);
   const [checkingId, setCheckingId] = useState(null);
+  const [checkingProxyId, setCheckingProxyId] = useState(null);
   const [selectedFolder, setSelectedFolder] = useState(FARM_FOLDER_ALL);
   const [selectedFarmIds, setSelectedFarmIds] = useState([]);
   const [q, setQ] = useState("");
@@ -1153,6 +1202,61 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
     clearFarmSelection();
     onRefresh();
   };
+  const checkFarmProxy = async (farm, { silent=false } = {}) => {
+    const proxy = entityProxy(farm);
+    if (!proxy) { if (!silent) showToast("У фарма немає proxy", "error"); return { ok:false, error:"missing proxy" }; }
+    setCheckingProxyId(farm.id);
+    const now = new Date().toISOString();
+    try {
+      const result = await checkProxyApi(proxy);
+      const patch = {
+        proxy_status:result.ok ? "ok" : "dead",
+        proxy_ip:result.ip || null,
+        proxy_country:result.country || result.country_code || null,
+        proxy_provider:result.provider || null,
+        proxy_latency_ms:result.latency_ms || null,
+        proxy_checked_at:now,
+        proxy_error:result.ok ? null : (result.error || "Proxy check failed"),
+      };
+      const { error } = await supabase.from("fb_farms").update(patch).eq("id", farm.id);
+      if (error) throw error;
+      await writeAuditLog({
+        user_id:user.id,
+        owner_id:farm.user_id || user.id,
+        entity_type:"farm",
+        entity_id:farm.id,
+        action:"proxy_check",
+        old_value:safeSnapshot(farm, ["proxy_status","proxy_ip","proxy_country"]),
+        new_value:patch,
+        message:result.ok ? `Proxy OK: ${result.ip || "IP?"}${result.country ? ` · ${result.country}` : ""} · ${result.latency_ms || 0}ms` : `Proxy DEAD: ${result.error || "невідома помилка"}`,
+      });
+      if (!silent) showToast(result.ok ? "Proxy OK" : "Proxy DEAD", result.ok ? "ok" : "error");
+      return result;
+    } catch (e) {
+      const patch = { proxy_status:"dead", proxy_checked_at:now, proxy_error:e.message };
+      await supabase.from("fb_farms").update(patch).eq("id", farm.id);
+      await writeAuditLog({ user_id:user.id, owner_id:farm.user_id || user.id, entity_type:"farm", entity_id:farm.id, action:"proxy_check", old_value:safeSnapshot(farm, ["proxy_status","proxy_ip","proxy_country"]), new_value:patch, message:`Proxy DEAD: ${e.message}` });
+      if (!silent) showToast("Proxy DEAD: " + e.message, "error");
+      return { ok:false, error:e.message };
+    } finally {
+      setCheckingProxyId(null);
+      if (!silent) onRefresh();
+    }
+  };
+
+  const bulkCheckFarmProxies = async () => {
+    if (!isAdmin || selectedFarms.length === 0) return;
+    let ok = 0;
+    let dead = 0;
+    for (const farm of selectedFarms) {
+      const result = await checkFarmProxy(farm, { silent:true });
+      if (result?.ok) ok += 1; else dead += 1;
+    }
+    showToast(`Proxy check: OK ${ok}, DEAD ${dead}`, dead ? "error" : "ok");
+    clearFarmSelection();
+    onRefresh();
+  };
+
 
   const saveFarm = async (f) => {
     if (!isAdmin) { showToast("Фарми може редагувати тільки адмін", "error"); return; }
@@ -1361,6 +1465,7 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
           onMoveFolder={(folderId)=>bulkUpdateFarms({ folder_id:folderId }, "folder_change", farm => `Папка фарму ${farm.name || farm.id} змінена`)}
           onAssignBuyer={(buyerId)=>bulkUpdateFarms({ buyer_id:buyerId }, "buyer_change", farm => `Buyer фарму ${farm.name || farm.id} змінений`)}
           onChangeStatus={(status)=>bulkUpdateFarms({ status }, "status_change", farm => `Статус: ${FARM_STATUS[farm.status] || farm.status || "—"} → ${FARM_STATUS[status] || status}`)}
+          onCheckProxy={bulkCheckFarmProxies}
           onDelete={bulkDeleteFarms}
         />
       )}
@@ -1379,9 +1484,11 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
               farmFolders={farmFolders}
               isAdmin={isAdmin}
               checking={checkingId === farm.id}
+              checkingProxy={checkingProxyId === farm.id}
               selected={selectedFarmIds.includes(farm.id)}
               onToggleSelect={()=>toggleFarmSelection(farm.id)}
               onCheck={checkFarm}
+              onCheckProxy={checkFarmProxy}
               onImportAccounts={setAccountImportFarm}
               onEdit={()=>setModal({ mode:"edit", data:farm })}
               onDelete={()=>deleteFarm(farm)}
@@ -1449,6 +1556,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
   const [auditLogs, setAuditLogs] = useState([]);
   const [selectedSetupFolder, setSelectedSetupFolder] = useState(SETUP_FOLDER_ALL);
   const [selectedSetupIds, setSelectedSetupIds] = useState([]);
+  const [checkingSetupProxyId, setCheckingSetupProxyId] = useState(null);
   const [section, setSection] = useState("setups");
   const [modal, setModal] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1550,6 +1658,61 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
     clearSetupSelection();
     fetchAll();
   };
+  const checkSetupProxy = async (setup, { silent=false } = {}) => {
+    const proxy = entityProxy(setup);
+    if (!proxy) { if (!silent) showToast("У сетапа немає proxy", "error"); return { ok:false, error:"missing proxy" }; }
+    setCheckingSetupProxyId(setup.id);
+    const now = new Date().toISOString();
+    try {
+      const result = await checkProxyApi(proxy);
+      const patch = {
+        proxy_status:result.ok ? "ok" : "dead",
+        proxy_ip:result.ip || null,
+        proxy_country:result.country || result.country_code || null,
+        proxy_provider:result.provider || null,
+        proxy_latency_ms:result.latency_ms || null,
+        proxy_checked_at:now,
+        proxy_error:result.ok ? null : (result.error || "Proxy check failed"),
+      };
+      const { error } = await supabase.from("fb_setups").update(patch).eq("id", setup.id);
+      if (error) throw error;
+      await writeAuditLog({
+        user_id:user.id,
+        owner_id:setup.user_id || user.id,
+        entity_type:"setup",
+        entity_id:setup.id,
+        action:"proxy_check",
+        old_value:safeSnapshot(setup, ["proxy_status","proxy_ip","proxy_country"]),
+        new_value:patch,
+        message:result.ok ? `Proxy OK: ${result.ip || "IP?"}${result.country ? ` · ${result.country}` : ""} · ${result.latency_ms || 0}ms` : `Proxy DEAD: ${result.error || "невідома помилка"}`,
+      });
+      if (!silent) showToast(result.ok ? "Proxy OK" : "Proxy DEAD", result.ok ? "ok" : "error");
+      return result;
+    } catch (e) {
+      const patch = { proxy_status:"dead", proxy_checked_at:now, proxy_error:e.message };
+      await supabase.from("fb_setups").update(patch).eq("id", setup.id);
+      await writeAuditLog({ user_id:user.id, owner_id:setup.user_id || user.id, entity_type:"setup", entity_id:setup.id, action:"proxy_check", old_value:safeSnapshot(setup, ["proxy_status","proxy_ip","proxy_country"]), new_value:patch, message:`Proxy DEAD: ${e.message}` });
+      if (!silent) showToast("Proxy DEAD: " + e.message, "error");
+      return { ok:false, error:e.message };
+    } finally {
+      setCheckingSetupProxyId(null);
+      if (!silent) fetchAll();
+    }
+  };
+
+  const bulkCheckSetupProxies = async () => {
+    if (!isAdmin || selectedSetups.length === 0) return;
+    let ok = 0;
+    let dead = 0;
+    for (const setup of selectedSetups) {
+      const result = await checkSetupProxy(setup, { silent:true });
+      if (result?.ok) ok += 1; else dead += 1;
+    }
+    showToast(`Proxy check: OK ${ok}, DEAD ${dead}`, dead ? "error" : "ok");
+    clearSetupSelection();
+    fetchAll();
+  };
+
 
   const saveSetup = async (f) => {
     const payload = { name:f.name, token:f.token, buyer_id:f.buyer_id||null, folder_id:f.folder_id||null, proxy_type:f.proxy_type, proxy_host:f.proxy_host, proxy_port:f.proxy_port, proxy_user:f.proxy_user, proxy_pass:f.proxy_pass, user_id:user.id };
@@ -1647,6 +1810,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
               entityLabel="сетапів"
               onMoveFolder={(folderId)=>bulkUpdateSetups({ folder_id:folderId }, "folder_change", setup => `Папка сетапу ${setup.name || setup.id} змінена`)}
               onAssignBuyer={(buyerId)=>bulkUpdateSetups({ buyer_id:buyerId }, "buyer_change", setup => `Buyer сетапу ${setup.name || setup.id} змінений`)}
+              onCheckProxy={bulkCheckSetupProxies}
               onDelete={bulkDeleteSetups}
             />
           )}
@@ -1664,6 +1828,8 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
                   auditLogs={auditLogs.filter(l => l.entity_type === "setup" && l.entity_id === s.id)}
                   selected={selectedSetupIds.includes(s.id)}
                   onToggleSelect={()=>toggleSetupSelection(s.id)}
+                  checkingProxy={checkingSetupProxyId === s.id}
+                  onCheckProxy={checkSetupProxy}
                   isAdmin={isAdmin}
                   onEdit={()=>setModal({mode:"edit",data:s})}
                   onDelete={()=>delSetup(s.id)}
