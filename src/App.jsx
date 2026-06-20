@@ -528,9 +528,15 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTab] = useState(() => {
+    try { return localStorage.getItem("arbcrm_active_tab") || "dashboard"; } catch { return "dashboard"; }
+  });
   const [profileOpen, setProfileOpen] = useState(false);
   const [domains, setDomains] = useState([]);
+
+  useEffect(() => {
+    try { localStorage.setItem("arbcrm_active_tab", tab); } catch {}
+  }, [tab]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {

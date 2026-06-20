@@ -42,6 +42,33 @@ function AlertRow({ level="warn", title, text, meta }) {
   );
 }
 
+function QualityLine({ label, value, limit=0, hint }) {
+  const bad = Number(value) > Number(limit);
+  return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, padding:"10px 0", borderTop:"1px solid #1a1d23" }}>
+      <div>
+        <div style={{ color:"#cbd5e1", fontWeight:800, fontSize:13 }}>{label}</div>
+        {hint && <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>{hint}</div>}
+      </div>
+      <div style={{ color:bad ? "#f87171" : "#4ade80", fontSize:20, fontWeight:950 }}>{value}</div>
+    </div>
+  );
+}
+
+function HealthBadge({ score }) {
+  const color = score >= 85 ? "#4ade80" : score >= 65 ? "#fbbf24" : "#f87171";
+  const label = score >= 85 ? "TOP стан" : score >= 65 ? "Потребує уваги" : "Критично";
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+      <div style={{ width:82, height:82, borderRadius:"50%", display:"grid", placeItems:"center", border:`7px solid ${color}`, color, fontSize:24, fontWeight:950 }}>{score}</div>
+      <div>
+        <div style={{ color, fontWeight:950, fontSize:16 }}>{label}</div>
+        <div style={{ color:"#64748b", fontSize:12, marginTop:4 }}>Health score рахується з proxy, банів, запусків, задач і якості даних.</div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardTab({ user, isAdmin, canSeeAll }) {
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
@@ -97,6 +124,13 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
     const todaySpend = data.accounts.reduce((s,a)=>s+(parseFloat(a.today_spend)||0),0);
     const activeTasks = data.tasks.filter(isActiveTask);
     const overdueTasks = data.tasks.filter(isOverdueTask);
+    const unsortedCreatives = data.creatives.filter(c => !c.archived && !c.folder_id).length;
+    const archivedCreatives = data.creatives.filter(c => c.archived).length;
+    const deadDomains = data.domains.filter(d => d.status === "мертвий").length;
+    const pausedDomains = data.domains.filter(d => d.status === "на паузі").length;
+    const launchesError = data.launches.filter(r => r.status === "error").length;
+    const penalty = deadProxy*10 + noProxy*4 + (bannedFarmAccounts+bannedAccounts)*9 + launchesError*8 + overdueTasks.length*7 + unsortedCreatives*2 + deadDomains*5;
+    const healthScore = Math.max(0, Math.min(100, 100 - penalty));
     return {
       domains:data.domains.length,
       creatives:data.creatives.filter(c => !c.archived).length,
@@ -107,10 +141,15 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
       bannedFarmAccounts,
       bannedAccounts,
       launchesDraft:data.launches.filter(r => r.status === "draft" || r.status === "ready").length,
-      launchesError:data.launches.filter(r => r.status === "error").length,
+      launchesError,
       todaySpend,
       activeTasks:activeTasks.length,
       overdueTasks:overdueTasks.length,
+      unsortedCreatives,
+      archivedCreatives,
+      deadDomains,
+      pausedDomains,
+      healthScore,
     };
   }, [data]);
 
@@ -140,8 +179,9 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
       </div>
 
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:12, marginBottom:18 }}>
-        <MetricCard label="Домени" value={metrics.domains} />
-        <MetricCard label="Креативи" value={metrics.creatives} color="#a78bfa" />
+        <MetricCard label="Health score" value={metrics.healthScore} color={metrics.healthScore >= 85 ? "#4ade80" : metrics.healthScore >= 65 ? "#fbbf24" : "#f87171"} sub="TOP CRM контроль" />
+        <MetricCard label="Домени" value={metrics.domains} sub={`Пауза: ${metrics.pausedDomains} · Мертві: ${metrics.deadDomains}`} />
+        <MetricCard label="Креативи" value={metrics.creatives} color="#a78bfa" sub={`Без папки: ${metrics.unsortedCreatives}`} />
         <MetricCard label="Сетапи" value={metrics.setups} color="#60a5fa" />
         <MetricCard label="Фарми" value={metrics.farms} color="#4ade80" />
         <MetricCard label="Dead proxy" value={metrics.deadProxy} color="#f87171" sub={`Без proxy: ${metrics.noProxy}`} />
@@ -149,6 +189,19 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
         <MetricCard label="Спенд сьогодні" value={money(metrics.todaySpend)} color="#fbbf24" />
         <MetricCard label="Запуски" value={metrics.launchesDraft} color="#38bdf8" sub={`Помилок: ${metrics.launchesError}`} />
         <MetricCard label="Задачі" value={metrics.activeTasks} color="#60a5fa" sub={`Прострочено: ${metrics.overdueTasks}`} />
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"minmax(280px,0.45fr) minmax(0,0.55fr)", gap:16, marginBottom:18 }}>
+        <div style={S.card}><HealthBadge score={metrics.healthScore} /></div>
+        <div style={{ ...S.card, padding:"12px 16px" }}>
+          <div style={{ color:"#e2e8f0", fontWeight:950, marginBottom:2 }}>Контроль якості даних</div>
+          <div style={{ color:"#64748b", fontSize:12, marginBottom:8 }}>Це не новий розділ, а checklist, який підсвічує слабкі місця CRM.</div>
+          <QualityLine label="Dead proxy" value={metrics.deadProxy} hint="Сетапи або фарми з неробочим proxy" />
+          <QualityLine label="Сутності без proxy" value={metrics.noProxy} hint="Фарми/сетапи, які треба дозаповнити" />
+          <QualityLine label="Бани акаунтів/кабінетів" value={metrics.bannedAccounts + metrics.bannedFarmAccounts} hint="Потребує перевірки перед запуском" />
+          <QualityLine label="Креативи без папки" value={metrics.unsortedCreatives} hint="Краще рознести по agent/offer/geo папках" />
+          <QualityLine label="Прострочені задачі" value={metrics.overdueTasks} hint="Треба закрити або перенести дедлайн" />
+        </div>
       </div>
 
       {errors.length > 0 && (

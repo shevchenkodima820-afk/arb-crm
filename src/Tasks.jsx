@@ -29,6 +29,7 @@ const ENTITY = {
   launch:"Запуск",
   domain:"Домен",
 };
+const DEFAULT_FILTER = { status:"active", priority:"", assignee:"", q:"" };
 
 const Field = ({ label, children }) => <div style={{ marginBottom:12 }}><label style={{ display:"block", color:"#64748b", fontSize:11, fontWeight:900, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:5 }}>{label}</label>{children}</div>;
 const Modal = ({ title, onClose, children }) => <div style={{ position:"fixed", inset:0, background:"#000b", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center" }}><div style={{ background:"#1a1d23", border:"1px solid #2e3240", borderRadius:14, width:"min(680px,96vw)", maxHeight:"90vh", overflowY:"auto", padding:24 }}><div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}><h3 style={{ margin:0, color:"#e2e8f0" }}>{title}</h3><button onClick={onClose} style={{ background:"none", border:"none", color:"#64748b", fontSize:24, cursor:"pointer" }}>×</button></div>{children}</div></div>;
@@ -71,7 +72,9 @@ export default function TasksTab({ user, isAdmin, canSeeAll }) {
   const [profiles, setProfiles] = useState([]);
   const [modal, setModal] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState({ status:"active", priority:"", assignee:"", q:"" });
+  const [filter, setFilter] = useState(() => {
+    try { return { ...DEFAULT_FILTER, ...(JSON.parse(localStorage.getItem("arbcrm_tasks_filter") || "{}")) }; } catch { return DEFAULT_FILTER; }
+  });
   const [toast, setToast] = useState(null);
   const showToast = (msg, type="ok") => { setToast({ msg, type }); setTimeout(()=>setToast(null), 3000); };
 
@@ -87,6 +90,7 @@ export default function TasksTab({ user, isAdmin, canSeeAll }) {
     setLoading(false);
   };
   useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { try { localStorage.setItem("arbcrm_tasks_filter", JSON.stringify(filter)); } catch {} }, [filter]);
 
   const filtered = useMemo(() => tasks.filter(t => {
     if (filter.status === "active" && ["done", "canceled"].includes(t.status)) return false;
@@ -138,7 +142,7 @@ export default function TasksTab({ user, isAdmin, canSeeAll }) {
       <select style={{ ...S.inp, cursor:"pointer" }} value={filter.status} onChange={e=>setFilter(p=>({...p,status:e.target.value}))}><option value="active">Активні</option>{Object.entries(STATUS).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}<option value="">Всі</option></select>
       <select style={{ ...S.inp, cursor:"pointer" }} value={filter.priority} onChange={e=>setFilter(p=>({...p,priority:e.target.value}))}><option value="">Всі пріоритети</option>{Object.entries(PRIORITY).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}</select>
       <select style={{ ...S.inp, cursor:"pointer" }} value={filter.assignee} onChange={e=>setFilter(p=>({...p,assignee:e.target.value}))}><option value="">Всі виконавці</option>{profiles.map(p => <option key={p.id} value={p.id}>{p.full_name || p.id}</option>)}</select>
-      <button onClick={()=>setFilter({ status:"active", priority:"", assignee:"", q:"" })} style={S.btnGhost}>Скинути</button>
+      <button onClick={()=>setFilter(DEFAULT_FILTER)} style={S.btnGhost}>Скинути</button>
     </div>
 
     {loading ? <div style={{ color:"#64748b", padding:40, textAlign:"center" }}>Завантаження…</div> : <div style={{ display:"grid", gap:10 }}>
