@@ -10,6 +10,12 @@ const S = {
 const empty = [];
 const money = v => `$${(Number(v) || 0).toFixed(0)}`;
 const safeDate = v => v ? new Date(v).toLocaleString("uk-UA") : "—";
+const isActiveTask = t => !["done", "canceled"].includes(t.status);
+const isOverdueTask = t => isActiveTask(t) && t.due_at && new Date(t.due_at).getTime() < Date.now();
+const isSoonTask = t => {
+  const time = t.due_at ? new Date(t.due_at).getTime() : 0;
+  return isActiveTask(t) && time >= Date.now() && time < Date.now() + 24 * 60 * 60 * 1000;
+};
 
 function MetricCard({ label, value, color="#60a5fa", sub }) {
   return (
@@ -47,6 +53,7 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
     farms:empty,
     farmAccounts:empty,
     launches:empty,
+    tasks:empty,
     audit:empty,
   });
   const [errors, setErrors] = useState([]);
@@ -63,7 +70,7 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
   const fetchAll = async () => {
     setLoading(true);
     setErrors([]);
-    const [domains, creatives, setups, accounts, farms, farmAccounts, launches, audit] = await Promise.all([
+    const [domains, creatives, setups, accounts, farms, farmAccounts, launches, tasks, audit] = await Promise.all([
       fetchSafe("domains", supabase.from("domains").select("*").order("created_at", { ascending:false })),
       fetchSafe("creatives", supabase.from("creatives").select("*").order("created_at", { ascending:false })),
       fetchSafe("fb_setups", supabase.from("fb_setups").select("*").order("created_at", { ascending:false })),
@@ -71,9 +78,10 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
       fetchSafe("fb_farms", supabase.from("fb_farms").select("*").order("created_at", { ascending:false })),
       fetchSafe("fb_farm_accounts", supabase.from("fb_farm_accounts").select("*").order("checked_at", { ascending:false })),
       fetchSafe("fb_launch_rows", supabase.from("fb_launch_rows").select("*").order("created_at", { ascending:false })),
+      fetchSafe("crm_tasks", supabase.from("crm_tasks").select("*").order("due_at", { ascending:true, nullsFirst:false })),
       fetchSafe("crm_audit_logs", supabase.from("crm_audit_logs").select("*").order("created_at", { ascending:false }).limit(30)),
     ]);
-    setData({ domains, creatives, setups, accounts, farms, farmAccounts, launches, audit });
+    setData({ domains, creatives, setups, accounts, farms, farmAccounts, launches, tasks, audit });
     setLoading(false);
   };
 
@@ -87,6 +95,8 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
     const bannedFarmAccounts = data.farmAccounts.filter(a => a.status === "banned").length;
     const bannedAccounts = data.accounts.filter(a => a.status === "забанений").length;
     const todaySpend = data.accounts.reduce((s,a)=>s+(parseFloat(a.today_spend)||0),0);
+    const activeTasks = data.tasks.filter(isActiveTask);
+    const overdueTasks = data.tasks.filter(isOverdueTask);
     return {
       domains:data.domains.length,
       creatives:data.creatives.filter(c => !c.archived).length,
@@ -99,6 +109,8 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
       launchesDraft:data.launches.filter(r => r.status === "draft" || r.status === "ready").length,
       launchesError:data.launches.filter(r => r.status === "error").length,
       todaySpend,
+      activeTasks:activeTasks.length,
+      overdueTasks:overdueTasks.length,
     };
   }, [data]);
 
@@ -110,6 +122,8 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
     data.farmAccounts.filter(a => a.status === "banned").slice(0,20).forEach(a => out.push({ level:"critical", title:"Бан кабінета у фармі", text:`${a.name || a.fb_account_id} · ${a.fb_account_id}`, meta:safeDate(a.checked_at) }));
     data.accounts.filter(a => a.status === "забанений").slice(0,20).forEach(a => out.push({ level:"critical", title:"Бан FB акаунта", text:`${a.name || a.fb_account_id} · ${a.fb_account_id}`, meta:a.currency || "" }));
     data.launches.filter(r => r.status === "error").slice(0,20).forEach(r => out.push({ level:"critical", title:"Помилка запуску", text:r.error || r.notes || r.id, meta:safeDate(r.updated_at || r.created_at) }));
+    data.tasks.filter(isOverdueTask).slice(0,20).forEach(t => out.push({ level:"critical", title:"Прострочена задача", text:t.title, meta:safeDate(t.due_at) }));
+    data.tasks.filter(isSoonTask).slice(0,20).forEach(t => out.push({ level:"warn", title:"Задача до 24 год", text:t.title, meta:safeDate(t.due_at) }));
     data.setups.filter(s => !s.archived && !s.proxy_host).slice(0,12).forEach(s => out.push({ level:"warn", title:"Сетап без proxy", text:s.name || s.id, meta:"додай proxy" }));
     data.farms.filter(f => !f.archived && !f.proxy_host).slice(0,12).forEach(f => out.push({ level:"warn", title:"Фарм без proxy", text:f.name || f.id, meta:"додай proxy" }));
     return out.filter(a => [a.title, a.text, a.meta].join(" ").toLowerCase().includes(q.trim().toLowerCase()));
@@ -120,7 +134,7 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:16, marginBottom:18 }}>
         <div>
           <h2 style={{ color:"#e2e8f0", margin:"0 0 4px", fontSize:22, fontWeight:900 }}>🏠 Огляд CRM</h2>
-          <div style={{ color:"#64748b", fontSize:13 }}>Живий стан доменів, креативів, FB акаунтів, фармів, проксі та запусків.</div>
+          <div style={{ color:"#64748b", fontSize:13 }}>Живий стан доменів, креативів, FB акаунтів, фармів, проксі, задач та запусків.</div>
         </div>
         <button onClick={fetchAll} disabled={loading} style={{ ...S.btnGhost, opacity:loading ? 0.65 : 1 }}>{loading ? "Оновлюю…" : "↻ Оновити"}</button>
       </div>
@@ -134,6 +148,7 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
         <MetricCard label="Бани" value={metrics.bannedAccounts + metrics.bannedFarmAccounts} color="#fb7185" sub={`Фарми: ${metrics.bannedFarmAccounts} · FB: ${metrics.bannedAccounts}`} />
         <MetricCard label="Спенд сьогодні" value={money(metrics.todaySpend)} color="#fbbf24" />
         <MetricCard label="Запуски" value={metrics.launchesDraft} color="#38bdf8" sub={`Помилок: ${metrics.launchesError}`} />
+        <MetricCard label="Задачі" value={metrics.activeTasks} color="#60a5fa" sub={`Прострочено: ${metrics.overdueTasks}`} />
       </div>
 
       {errors.length > 0 && (
@@ -151,7 +166,7 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
             </div>
             <input style={{ ...S.inp, maxWidth:300 }} value={q} onChange={e=>setQ(e.target.value)} placeholder="Пошук алерта…" />
           </div>
-          {alerts.length === 0 ? <div style={{ padding:28, color:"#4ade80", fontWeight:800 }}>Критичних алертів не знайдено.</div> : alerts.slice(0,60).map((a,idx)=><AlertRow key={`${a.title}-${idx}`} {...a} />)}
+          {alerts.length === 0 ? <div style={{ padding:28, color:"#4ade80", fontWeight:800 }}>Критичних алертів не знайдено.</div> : alerts.slice(0,70).map((a,idx)=><AlertRow key={`${a.title}-${idx}`} {...a} />)}
         </div>
 
         <div style={{ ...S.card, padding:0, overflow:"hidden" }}>

@@ -5,6 +5,10 @@ import ProfileTab from "./Profile";
 import LaunchesTab from "./Launches";
 import CreativesLibraryTab from "./Creatives";
 import DashboardTab from "./Dashboard";
+import TasksTab from "./Tasks";
+import AnalyticsTab from "./Analytics";
+import CsvToolsTab from "./CsvTools";
+import AccessTab from "./Access";
 import { supabase } from "./supabase";
 
 const S = {
@@ -566,8 +570,12 @@ export default function App() {
     { id:"domains", label:"🌐 Домени / ПВА" },
     { id:"creatives", label:"🎨 Креативи" },
     { id:"stats", label:"📊 Статистика" },
+    { id:"analytics", label:"📈 Аналітика" },
+    { id:"tasks", label:"✅ Задачі" },
     { id:"accounts", label:"📱 FB Акаунти" },
     ...(isAdmin ? [{ id:"launches", label:"🚀 Запуски β" }] : []),
+    ...(isAdmin ? [{ id:"csv", label:"↕️ CSV" }] : []),
+    ...((isAdmin || isTeamLead) ? [{ id:"access", label:"🔐 Доступи" }] : []),
     ...((isAdmin || isTeamLead) ? [{ id:"team", label:"👥 Команди" }] : []),
   ];
 
@@ -599,8 +607,12 @@ export default function App() {
         {tab === "domains" && <DomainsTab user={user} isAdmin={isAdmin} />}
         {tab === "creatives" && <CreativesLibraryTab user={user} isAdmin={isAdmin} domains={domains} />}
         {tab === "stats" && <StatsTab domains={domains} />}
+        {tab === "analytics" && <AnalyticsTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
+        {tab === "tasks" && <TasksTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
         {tab === "accounts" && <FbAccountsTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
         {tab === "launches" && isAdmin && <LaunchesTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
+        {tab === "csv" && isAdmin && <CsvToolsTab user={user} isAdmin={isAdmin} />}
+        {tab === "access" && (isAdmin || isTeamLead) && <AccessTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
         {tab === "team" && (isAdmin || isTeamLead) && <TeamsTab currentUserId={user.id} isAdmin={isAdmin} />}
       </div>
 
