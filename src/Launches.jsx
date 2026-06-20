@@ -268,6 +268,8 @@ export default function LaunchesTab({ user, isAdmin, canSeeAll }) {
   const [accounts, setAccounts] = useState([]);
   const [domains, setDomains] = useState([]);
   const [creatives, setCreatives] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [lookup, setLookup] = useState({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -280,12 +282,13 @@ export default function LaunchesTab({ user, isAdmin, canSeeAll }) {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data:r, error:re }, { data:s }, { data:a }, { data:d }, { data:c }] = await Promise.all([
+    const [{ data:r, error:re }, { data:s }, { data:a }, { data:d }, { data:c }, tpl] = await Promise.all([
       supabase.from("fb_launch_rows").select("*").order("created_at", { ascending:false }),
       supabase.from("fb_setups").select("*").order("created_at", { ascending:false }),
       supabase.from("fb_accounts").select("*").order("created_at", { ascending:false }),
       supabase.from("domains").select("*").order("created_at", { ascending:false }),
       supabase.from("creatives").select("*").order("created_at", { ascending:false }),
+      supabase.from("fb_launch_templates").select("*").order("created_at", { ascending:false }),
     ]);
 
     if (re) showToast("Таблиця запусків не готова: виконайте SQL migration", "error");
@@ -294,6 +297,7 @@ export default function LaunchesTab({ user, isAdmin, canSeeAll }) {
     setAccounts(a || []);
     setDomains(d || []);
     setCreatives(c || []);
+    if (!tpl.error) setTemplates(tpl.data || []);
     setLoading(false);
   };
 
@@ -301,6 +305,58 @@ export default function LaunchesTab({ user, isAdmin, canSeeAll }) {
 
   const visibleRows = useMemo(() => rows.filter(row => mode === "launched" ? row.status === "launched" : row.status !== "launched"), [rows, mode]);
   const selectedRows = rows.filter(r => r._selected && (mode === "launched" ? r.status === "launched" : r.status !== "launched"));
+
+  const templateFromRow = (row) => {
+    const payload = rowToDb(row, user.id);
+    ["id", "user_id", "status", "fb_campaign_id", "fb_adset_id", "fb_creative_id", "fb_ad_id", "error", "created_at", "updated_at"].forEach(k => delete payload[k]);
+    return payload;
+  };
+
+  const saveTemplate = async () => {
+    const source = selectedRows[0] || visibleRows[0];
+    if (!source) { showToast("Немає рядка для шаблону", "error"); return; }
+    const name = prompt("Назва шаблону запуску", `Template ${templates.length + 1}`);
+    if (!name?.trim()) return;
+    const { error } = await supabase.from("fb_launch_templates").insert([{ user_id:user.id, name:name.trim(), data:templateFromRow(source) }]);
+    if (error) { showToast("Помилка шаблону: " + error.message, "error"); return; }
+    showToast("Шаблон збережено");
+    await fetchAll();
+  };
+
+  const applyTemplate = () => {
+    const template = templates.find(t => t.id === selectedTemplateId);
+    if (!template) { showToast("Вибери шаблон", "error"); return; }
+    if (!selectedRows.length) { showToast("Вибери рядки, куди застосувати шаблон", "error"); return; }
+    const data = template.data || {};
+    const ids = new Set(selectedRows.map(r => r._localId));
+    setRows(prev => prev.map(row => ids.has(row._localId) ? {
+      ...row,
+      ...data,
+      id:row.id,
+      user_id:row.user_id || user.id,
+      status:row.status,
+      fb_campaign_id:row.fb_campaign_id,
+      fb_adset_id:row.fb_adset_id,
+      fb_creative_id:row.fb_creative_id,
+      fb_ad_id:row.fb_ad_id,
+      error:row.error,
+      _localId:row._localId,
+      _selected:row._selected,
+      _dirty:true,
+    } : row));
+    showToast(`Шаблон застосовано до ${selectedRows.length} рядків`);
+  };
+
+  const deleteTemplate = async () => {
+    if (!selectedTemplateId) return;
+    const template = templates.find(t => t.id === selectedTemplateId);
+    if (!confirm(`Видалити шаблон "${template?.name || selectedTemplateId}"?`)) return;
+    const { error } = await supabase.from("fb_launch_templates").delete().eq("id", selectedTemplateId);
+    if (error) { showToast("Помилка видалення шаблону: " + error.message, "error"); return; }
+    setSelectedTemplateId("");
+    showToast("Шаблон видалено");
+    await fetchAll();
+  };
 
   const updateRow = (localId, key, value) => {
     setRows(prev => prev.map(row => row._localId === localId ? { ...row, [key]:value, _dirty:true } : row));
@@ -537,6 +593,13 @@ export default function LaunchesTab({ user, isAdmin, canSeeAll }) {
           <button onClick={addRows} style={S.btnGhost}>Додати</button>
           <input style={{ ...S.inp, width:70 }} type="number" min="1" max="100" value={addCount} onChange={e=>setAddCount(e.target.value)} />
           <span style={{ color:"#94a3b8", fontSize:13 }}>рядків</span>
+          <select style={{ ...S.inp, width:220, cursor:"pointer" }} value={selectedTemplateId} onChange={e=>setSelectedTemplateId(e.target.value)}>
+            <option value="">— шаблон запуску —</option>
+            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <button onClick={applyTemplate} disabled={!selectedTemplateId || !selectedRows.length} style={{ ...S.btnGhost, opacity:selectedTemplateId && selectedRows.length ? 1 : 0.45 }}>↙ Застосувати</button>
+          <button onClick={saveTemplate} style={S.btnGhost}>☆ Зберегти шаблон</button>
+          <button onClick={deleteTemplate} disabled={!selectedTemplateId} style={{ ...S.btnGhost, color:"#f87171", opacity:selectedTemplateId ? 1 : 0.45 }}>🗑 Шаблон</button>
           <div style={{ flex:1 }} />
           <button onClick={removeSelected} disabled={!selectedRows.length} style={{ ...S.btnDanger, opacity:selectedRows.length ? 1 : 0.45 }}>Видалити вибрані</button>
           <button onClick={saveRows} disabled={saving} style={{ ...S.btn, opacity:saving ? 0.7 : 1 }}>{saving ? "Зберігаю…" : "💾 Зберегти"}</button>

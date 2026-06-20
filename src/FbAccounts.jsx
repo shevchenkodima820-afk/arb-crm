@@ -38,6 +38,7 @@ const ACTION_LABELS = {
   bulk_update: "масова дія",
   check: "чек",
   proxy_check: "proxy",
+  archive: "архів",
 };
 
 const safeSnapshot = (row, keys) => keys.reduce((acc, key) => {
@@ -83,7 +84,7 @@ const AuditTrail = ({ logs=[], users=[] }) => {
   );
 };
 
-const BulkBar = ({ selectedCount, onSelectAll, onClear, folders=[], buyers=[], statusOptions=null, onMoveFolder, onAssignBuyer, onChangeStatus, onCheckProxy, onDelete, entityLabel="елементів" }) => {
+const BulkBar = ({ selectedCount, onSelectAll, onClear, folders=[], buyers=[], statusOptions=null, onMoveFolder, onAssignBuyer, onChangeStatus, onCheckProxy, onArchive, archiveLabel="📦 В архів", onDelete, entityLabel="елементів" }) => {
   if (!selectedCount) {
     return (
       <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12, color:"#64748b", fontSize:12 }}>
@@ -118,6 +119,7 @@ const BulkBar = ({ selectedCount, onSelectAll, onClear, folders=[], buyers=[], s
         </select>
       )}
       {onCheckProxy && <button onClick={onCheckProxy} style={{ ...S.btnGhost, padding:"7px 10px", color:"#93c5fd" }}>🌐 Check proxy</button>}
+      {onArchive && <button onClick={onArchive} style={{ ...S.btnGhost, padding:"7px 10px", color:"#c4b5fd" }}>{archiveLabel}</button>}
       {onDelete && <button onClick={onDelete} style={{ ...S.btnGhost, padding:"7px 10px", color:"#f87171" }}>🗑 Видалити</button>}
     </div>
   );
@@ -370,12 +372,14 @@ const StatusDot = ({ status }) => (
 
 // ─── SETUP FORM ───────────────────────────────────────────────────────────
 const SetupForm = ({ initial={}, buyers, setupFolders=[], onSave, onClose }) => {
-  const [f, setF] = useState({
+  const [f, setF] = useState(() => ({
     name:"", token:"", buyer_id:"", folder_id:"",
     proxy_type:"socks5", proxy_host:"", proxy_port:"",
     proxy_user:"", proxy_pass:"",
-    ...initial
-  });
+    notes:"", tags:[], tags_text:tagsToText(initial.tags), archived:false,
+    ...initial,
+    tags_text:tagsToText(initial.tags),
+  }));
   const set = k => e => setF(p=>({...p,[k]:e.target.value}));
   return (
     <div>
@@ -394,6 +398,13 @@ const SetupForm = ({ initial={}, buyers, setupFolders=[], onSave, onClose }) => 
           </select>
         </Field>
       </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <Field label="Теги"><input style={S.inp} value={f.tags_text || ""} onChange={set("tags_text")} placeholder="agent1, trusted, high-limit" /></Field>
+        <Field label="Нотатки"><input style={S.inp} value={f.notes || ""} onChange={set("notes")} placeholder="Коментар по сетапу" /></Field>
+      </div>
+      <label style={{ display:"flex", alignItems:"center", gap:8, color:"#94a3b8", fontSize:13, margin:"-2px 0 14px" }}>
+        <input type="checkbox" checked={!!f.archived} onChange={e=>setF(p=>({...p, archived:e.target.checked}))} /> В архіві
+      </label>
       <Field label="Facebook Access Token">
         <input style={S.inp} value={f.token} onChange={set("token")} placeholder="EAAxxxxxxxxxxxxxxxxx" />
         <div style={{ color:"#475569", fontSize:11, marginTop:4 }}>
@@ -527,7 +538,7 @@ const SetupCard = ({ setup, buyers, setupFolders, auditLogs=[], selected=false, 
         <span style={{ color:"#64748b", fontSize:14, transition:"transform 0.2s", display:"inline-block", transform:expanded?"rotate(90deg)":"rotate(0deg)" }}>▶</span>
         {isAdmin && <input type="checkbox" checked={selected} onClick={e=>e.stopPropagation()} onChange={onToggleSelect} style={{ width:16, height:16, cursor:"pointer" }} />}
         <div style={{ flex:1 }}>
-          <div style={{ color:"#e2e8f0", fontWeight:700, fontSize:15 }}>{setup.name}</div>
+          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}><span style={{ color:"#e2e8f0", fontWeight:700, fontSize:15 }}>{setup.name}</span>{setup.archived && <ArchivedBadge />}<TagList tags={setup.tags} /></div>
           <div style={{ color:"#64748b", fontSize:12, marginTop:2 }}>
             <span>📁 {folder?.name || "Без папки"}</span>
             {" · "}
@@ -539,6 +550,7 @@ const SetupCard = ({ setup, buyers, setupFolders, auditLogs=[], selected=false, 
             {" · "}
             <ProxyHealth row={setup} />
           </div>
+          {setup.notes && <div style={{ color:"#64748b", fontSize:12, marginTop:5 }}>📝 {setup.notes}</div>}
         </div>
         {data && <span style={{ color:"#fbbf24", fontWeight:700, fontSize:14 }}>${totalSpend.toFixed(2)} сьогодні</span>}
         <div style={{ display:"flex", gap:8 }} onClick={e=>e.stopPropagation()}>
@@ -732,6 +744,24 @@ const farmFolderName = (folderId, farmFolders=[]) => farmFolders.find(f => f.id 
 const SETUP_FOLDER_ALL = "__all_setups";
 const SETUP_FOLDER_NONE = "__none_setups";
 
+function tagsToText(tags) {
+  if (Array.isArray(tags)) return tags.filter(Boolean).join(", ");
+  return String(tags || "");
+}
+
+function parseTags(value) {
+  if (Array.isArray(value)) return value.map(v => String(v).trim()).filter(Boolean);
+  return String(value || "").split(/[,#]/).map(v => v.trim()).filter(Boolean).slice(0, 20);
+}
+
+const TagList = ({ tags }) => {
+  const list = Array.isArray(tags) ? tags.filter(Boolean) : parseTags(tags);
+  if (!list.length) return null;
+  return <span style={{ display:"inline-flex", gap:5, flexWrap:"wrap" }}>{list.slice(0,6).map(tag => <span key={tag} style={{ color:"#bfdbfe", background:"#1d4ed833", border:"1px solid #1d4ed866", borderRadius:999, padding:"1px 7px", fontSize:11, fontWeight:800 }}>#{tag}</span>)}</span>;
+};
+
+const ArchivedBadge = () => <span style={{ color:"#c4b5fd", background:"#7c3aed22", border:"1px solid #7c3aed66", borderRadius:999, padding:"2px 8px", fontSize:11, fontWeight:900 }}>архів</span>;
+
 const emptyFarm = {
   name:"",
   buyer_id:"",
@@ -745,6 +775,9 @@ const emptyFarm = {
   proxy_user:"",
   proxy_pass:"",
   notes:"",
+  tags:[],
+  tags_text:"",
+  archived:false,
 };
 
 function maskSecret(value = "") {
@@ -808,12 +841,13 @@ function mapFbAdAccountStatus(accountStatus) {
 
 const FarmForm = ({ initial={}, buyers, farmFolders=[], onSave, onClose }) => {
   const editing = Boolean(initial.id);
-  const [f, setF] = useState({
+  const [f, setF] = useState(() => ({
     ...emptyFarm,
     ...initial,
+    tags_text:tagsToText(initial.tags),
     cookie_data: editing ? "" : (initial.cookie_data || ""),
     access_token: editing ? "" : (initial.access_token || ""),
-  });
+  }));
   const set = k => e => setF(p=>({...p,[k]:e.target.value}));
   const applyProxyRaw = () => {
     const parsed = parseProxyString(f.proxy_raw);
@@ -883,7 +917,11 @@ const FarmForm = ({ initial={}, buyers, farmFolders=[], onSave, onClose }) => {
         <Field label="Логін"><input style={S.inp} value={f.proxy_user || ""} onChange={set("proxy_user")} placeholder="user" /></Field>
         <Field label="Пароль"><input style={S.inp} value={f.proxy_pass || ""} onChange={set("proxy_pass")} placeholder="password" /></Field>
         <Field label="Нотатки"><input style={S.inp} value={f.notes || ""} onChange={set("notes")} placeholder="2FA, дата покупки, якість тощо" /></Field>
+        <Field label="Теги"><input style={S.inp} value={f.tags_text || ""} onChange={set("tags_text")} placeholder="agent1, aged, card-ok" /></Field>
       </div>
+      <label style={{ display:"flex", alignItems:"center", gap:8, color:"#94a3b8", fontSize:13, margin:"2px 0 10px" }}>
+        <input type="checkbox" checked={!!f.archived} onChange={e=>setF(p=>({...p, archived:e.target.checked}))} /> В архіві
+      </label>
 
       <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
         <button onClick={onClose} style={S.btnGhost}>Скасувати</button>
@@ -1080,6 +1118,8 @@ const FarmRow = ({ farm, farmAccounts, auditLogs=[], buyers, farmFolders, isAdmi
             <span style={{ width:9, height:9, borderRadius:"50%", background:FARM_STATUS_COLOR[statusKey] || "#64748b", display:"inline-block" }} />
             <div style={{ color:"#e2e8f0", fontWeight:800, fontSize:15, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{farm.name || "FARM"}</div>
             <span style={{ color:FARM_STATUS_COLOR[statusKey] || "#64748b", background:"#0f1117", border:"1px solid #1e2330", borderRadius:999, padding:"2px 8px", fontSize:11, fontWeight:800 }}>{FARM_STATUS[statusKey] || statusKey}</span>
+            {farm.archived && <ArchivedBadge />}
+            <TagList tags={farm.tags} />
             {bannedCount > 0 && <span style={{ color:"#fecaca", background:"#7f1d1d66", borderRadius:999, padding:"2px 8px", fontSize:11, fontWeight:900 }}>бан кабів: {bannedCount}</span>}
           </div>
           <div style={{ color:"#64748b", fontSize:12, display:"flex", gap:12, flexWrap:"wrap" }}>
@@ -1121,16 +1161,19 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
   const [checkingId, setCheckingId] = useState(null);
   const [checkingProxyId, setCheckingProxyId] = useState(null);
   const [selectedFolder, setSelectedFolder] = useState(FARM_FOLDER_ALL);
+  const [showArchivedFarms, setShowArchivedFarms] = useState(false);
   const [selectedFarmIds, setSelectedFarmIds] = useState([]);
   const [q, setQ] = useState("");
 
   const folderCount = (folderId) => {
-    if (folderId === FARM_FOLDER_ALL) return farms.length;
-    if (folderId === FARM_FOLDER_NONE) return farms.filter(f => !f.folder_id).length;
-    return farms.filter(f => f.folder_id === folderId).length;
+    const base = farms.filter(f => showArchivedFarms ? !!f.archived : !f.archived);
+    if (folderId === FARM_FOLDER_ALL) return base.length;
+    if (folderId === FARM_FOLDER_NONE) return base.filter(f => !f.folder_id).length;
+    return base.filter(f => f.folder_id === folderId).length;
   };
 
   const filtered = farms.filter(f => {
+    if (showArchivedFarms ? !f.archived : f.archived) return false;
     const folder = farmFolders.find(ff => ff.id === f.folder_id);
     const folderMatches = selectedFolder === FARM_FOLDER_ALL
       || (selectedFolder === FARM_FOLDER_NONE ? !f.folder_id : f.folder_id === selectedFolder);
@@ -1139,10 +1182,10 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
   });
 
   const stats = {
-    total: farms.length,
-    ready: farms.filter(f=>f.status === "ready").length,
-    checking: farms.filter(f=>f.status === "checking").length,
-    banned: farms.filter(f=>f.status === "banned").length,
+    total: farms.filter(f=>!f.archived).length,
+    ready: farms.filter(f=>!f.archived && f.status === "ready").length,
+    checking: farms.filter(f=>!f.archived && f.status === "checking").length,
+    banned: farms.filter(f=>!f.archived && f.status === "banned").length,
     bannedAccounts: farmAccounts.filter(a=>a.status === "banned").length,
   };
 
@@ -1172,7 +1215,7 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
       entity_type:"farm",
       entity_id:farm.id,
       action,
-      old_value:safeSnapshot(farm, ["name","buyer_id","folder_id","status"]),
+      old_value:safeSnapshot(farm, ["name","buyer_id","folder_id","status","tags","archived"]),
       new_value:patch,
       message:typeof messageBuilder === "function" ? messageBuilder(farm) : messageBuilder,
     })));
@@ -1191,7 +1234,7 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
       entity_type:"farm",
       entity_id:farm.id,
       action:"delete",
-      old_value:safeSnapshot(farm, ["name","buyer_id","folder_id","status"]),
+      old_value:safeSnapshot(farm, ["name","buyer_id","folder_id","status","tags","archived"]),
       new_value:{},
       message:`Масово видалено фарм: ${farm.name || farm.id}`,
     })));
@@ -1271,6 +1314,8 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
       proxy_user:f.proxy_user || "",
       proxy_pass:f.proxy_pass || "",
       notes:f.notes || "",
+      tags:parseTags(f.tags_text),
+      archived:!!f.archived,
       user_id:user.id,
     };
     if (f.cookie_data?.trim()) payload.cookie_data = f.cookie_data.trim();
@@ -1293,8 +1338,8 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
       entity_type:"farm",
       entity_id:savedFarm?.id,
       action:modal?.mode === "edit" ? "update" : "create",
-      old_value:modal?.data?.id ? safeSnapshot(modal.data, ["name","buyer_id","folder_id","status"]) : {},
-      new_value:safeSnapshot(payload, ["name","buyer_id","folder_id","status"]),
+      old_value:modal?.data?.id ? safeSnapshot(modal.data, ["name","buyer_id","folder_id","status","tags","archived"]) : {},
+      new_value:safeSnapshot(payload, ["name","buyer_id","folder_id","status","tags","archived"]),
       message:modal?.mode === "edit" ? `Фарм оновлено: ${payload.name}` : `Фарм створено: ${payload.name}`,
     });
     showToast(modal?.mode === "edit" ? "Фарм оновлено" : "Фарм додано");
@@ -1311,7 +1356,7 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
       entity_type:"farm",
       entity_id:farm.id,
       action:"delete",
-      old_value:safeSnapshot(farm, ["name","buyer_id","folder_id","status"]),
+      old_value:safeSnapshot(farm, ["name","buyer_id","folder_id","status","tags","archived"]),
       new_value:{},
       message:`Фарм видалено: ${farm.name || farm.id}`,
     });
@@ -1439,6 +1484,7 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
           );
         })}
         {isAdmin && <button onClick={createFolder} style={{ ...S.btnGhost, borderRadius:999, padding:"8px 12px" }}>+ Папка</button>}
+        <button onClick={()=>setShowArchivedFarms(v=>!v)} style={{ ...S.btnGhost, borderRadius:999, padding:"8px 12px", color:showArchivedFarms ? "#c4b5fd" : "#94a3b8" }}>{showArchivedFarms ? "↩️ Активні" : "📦 Архів"}</button>
       </div>
 
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginBottom:16 }}>
@@ -1466,6 +1512,8 @@ const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, us
           onAssignBuyer={(buyerId)=>bulkUpdateFarms({ buyer_id:buyerId }, "buyer_change", farm => `Buyer фарму ${farm.name || farm.id} змінений`)}
           onChangeStatus={(status)=>bulkUpdateFarms({ status }, "status_change", farm => `Статус: ${FARM_STATUS[farm.status] || farm.status || "—"} → ${FARM_STATUS[status] || status}`)}
           onCheckProxy={bulkCheckFarmProxies}
+          onArchive={()=>bulkUpdateFarms({ archived:!showArchivedFarms }, "archive", farm => showArchivedFarms ? `Фарм повернуто з архіву: ${farm.name || farm.id}` : `Фарм перенесено в архів: ${farm.name || farm.id}`)}
+          archiveLabel={showArchivedFarms ? "↩️ З архіву" : "📦 В архів"}
           onDelete={bulkDeleteFarms}
         />
       )}
@@ -1555,6 +1603,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
   const [setupFolders, setSetupFolders] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [selectedSetupFolder, setSelectedSetupFolder] = useState(SETUP_FOLDER_ALL);
+  const [showArchivedSetups, setShowArchivedSetups] = useState(false);
   const [selectedSetupIds, setSelectedSetupIds] = useState([]);
   const [checkingSetupProxyId, setCheckingSetupProxyId] = useState(null);
   const [section, setSection] = useState("setups");
@@ -1594,13 +1643,14 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
   useEffect(()=>{ fetchAll(); },[]);
 
   const setupFolderCount = (folderId) => {
-    if (folderId === SETUP_FOLDER_ALL) return setups.length;
-    if (folderId === SETUP_FOLDER_NONE) return setups.filter(s => !s.folder_id).length;
-    return setups.filter(s => s.folder_id === folderId).length;
+    const base = setups.filter(s => showArchivedSetups ? !!s.archived : !s.archived);
+    if (folderId === SETUP_FOLDER_ALL) return base.length;
+    if (folderId === SETUP_FOLDER_NONE) return base.filter(s => !s.folder_id).length;
+    return base.filter(s => s.folder_id === folderId).length;
   };
 
-  const filteredSetups = setups.filter(s => selectedSetupFolder === SETUP_FOLDER_ALL
-    || (selectedSetupFolder === SETUP_FOLDER_NONE ? !s.folder_id : s.folder_id === selectedSetupFolder)
+  const filteredSetups = setups.filter(s => (showArchivedSetups ? !!s.archived : !s.archived) && (selectedSetupFolder === SETUP_FOLDER_ALL
+    || (selectedSetupFolder === SETUP_FOLDER_NONE ? !s.folder_id : s.folder_id === selectedSetupFolder))
   );
   const selectedSetups = setups.filter(s => selectedSetupIds.includes(s.id));
   const selectAllVisibleSetups = () => setSelectedSetupIds(filteredSetups.map(s => s.id));
@@ -1628,7 +1678,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
       entity_type:"setup",
       entity_id:setup.id,
       action,
-      old_value:safeSnapshot(setup, ["name","buyer_id","folder_id"]),
+      old_value:safeSnapshot(setup, ["name","buyer_id","folder_id","notes","tags","archived"]),
       new_value:patch,
       message:typeof messageBuilder === "function" ? messageBuilder(setup) : messageBuilder,
     })));
@@ -1647,7 +1697,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
       entity_type:"setup",
       entity_id:setup.id,
       action:"delete",
-      old_value:safeSnapshot(setup, ["name","buyer_id","folder_id"]),
+      old_value:safeSnapshot(setup, ["name","buyer_id","folder_id","notes","tags","archived"]),
       new_value:{},
       message:`Масово видалено сетап: ${setup.name || setup.id}`,
     })));
@@ -1715,16 +1765,16 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
 
   const saveSetup = async (f) => {
-    const payload = { name:f.name, token:f.token, buyer_id:f.buyer_id||null, folder_id:f.folder_id||null, proxy_type:f.proxy_type, proxy_host:f.proxy_host, proxy_port:f.proxy_port, proxy_user:f.proxy_user, proxy_pass:f.proxy_pass, user_id:user.id };
+    const payload = { name:f.name, token:f.token, buyer_id:f.buyer_id||null, folder_id:f.folder_id||null, proxy_type:f.proxy_type, proxy_host:f.proxy_host, proxy_port:f.proxy_port, proxy_user:f.proxy_user, proxy_pass:f.proxy_pass, notes:f.notes||"", tags:parseTags(f.tags_text), archived:!!f.archived, user_id:user.id };
     if (modal.mode==="add") {
-      const { data, error } = await supabase.from("fb_setups").insert([payload]).select("id,user_id,name,buyer_id,folder_id").single();
+      const { data, error } = await supabase.from("fb_setups").insert([payload]).select("id,user_id,name,buyer_id,folder_id,notes,tags,archived").single();
       if (error) { showToast("❌ "+error.message,"error"); return; }
-      await writeAuditLog({ user_id:user.id, owner_id:data?.user_id || user.id, entity_type:"setup", entity_id:data?.id, action:"create", old_value:{}, new_value:safeSnapshot(payload, ["name","buyer_id","folder_id"]), message:`Сетап створено: ${payload.name}` });
+      await writeAuditLog({ user_id:user.id, owner_id:data?.user_id || user.id, entity_type:"setup", entity_id:data?.id, action:"create", old_value:{}, new_value:safeSnapshot(payload, ["name","buyer_id","folder_id","notes","tags","archived"]), message:`Сетап створено: ${payload.name}` });
       showToast("Сетап додано ✓");
     } else {
       const { error } = await supabase.from("fb_setups").update(payload).eq("id", modal.data.id);
       if (error) { showToast("❌ "+error.message,"error"); return; }
-      await writeAuditLog({ user_id:user.id, owner_id:modal.data.user_id || user.id, entity_type:"setup", entity_id:modal.data.id, action:"update", old_value:safeSnapshot(modal.data, ["name","buyer_id","folder_id"]), new_value:safeSnapshot(payload, ["name","buyer_id","folder_id"]), message:`Сетап оновлено: ${payload.name}` });
+      await writeAuditLog({ user_id:user.id, owner_id:modal.data.user_id || user.id, entity_type:"setup", entity_id:modal.data.id, action:"update", old_value:safeSnapshot(modal.data, ["name","buyer_id","folder_id","notes","tags","archived"]), new_value:safeSnapshot(payload, ["name","buyer_id","folder_id","notes","tags","archived"]), message:`Сетап оновлено: ${payload.name}` });
       showToast("Збережено ✓");
     }
     setModal(null);
@@ -1734,7 +1784,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
   const delSetup = async (id) => {
     if (!confirm("Видалити сетап і всі його акаунти?")) return;
     const setup = setups.find(s => s.id === id);
-    if (setup) await writeAuditLog({ user_id:user.id, owner_id:setup.user_id || user.id, entity_type:"setup", entity_id:id, action:"delete", old_value:safeSnapshot(setup, ["name","buyer_id","folder_id"]), new_value:{}, message:`Сетап видалено: ${setup.name || id}` });
+    if (setup) await writeAuditLog({ user_id:user.id, owner_id:setup.user_id || user.id, entity_type:"setup", entity_id:id, action:"delete", old_value:safeSnapshot(setup, ["name","buyer_id","folder_id","notes","tags","archived"]), new_value:{}, message:`Сетап видалено: ${setup.name || id}` });
     await supabase.from("fb_accounts").delete().eq("setup_id", id);
     await supabase.from("fb_setups").delete().eq("id", id);
     showToast("Видалено");
@@ -1792,6 +1842,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
               );
             })}
             {isAdmin && <button onClick={createSetupFolder} style={{ ...S.btnGhost, borderRadius:999, padding:"8px 12px" }}>+ Папка</button>}
+            <button onClick={()=>setShowArchivedSetups(v=>!v)} style={{ ...S.btnGhost, borderRadius:999, padding:"8px 12px", color:showArchivedSetups ? "#c4b5fd" : "#94a3b8" }}>{showArchivedSetups ? "↩️ Активні" : "📦 Архів"}</button>
           </div>
 
           {/* Header */}
@@ -1811,6 +1862,8 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
               onMoveFolder={(folderId)=>bulkUpdateSetups({ folder_id:folderId }, "folder_change", setup => `Папка сетапу ${setup.name || setup.id} змінена`)}
               onAssignBuyer={(buyerId)=>bulkUpdateSetups({ buyer_id:buyerId }, "buyer_change", setup => `Buyer сетапу ${setup.name || setup.id} змінений`)}
               onCheckProxy={bulkCheckSetupProxies}
+              onArchive={()=>bulkUpdateSetups({ archived:!showArchivedSetups }, "archive", setup => showArchivedSetups ? `Сетап повернуто з архіву: ${setup.name || setup.id}` : `Сетап перенесено в архів: ${setup.name || setup.id}`)}
+              archiveLabel={showArchivedSetups ? "↩️ З архіву" : "📦 В архів"}
               onDelete={bulkDeleteSetups}
             />
           )}

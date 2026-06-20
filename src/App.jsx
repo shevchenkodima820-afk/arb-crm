@@ -4,6 +4,7 @@ import TeamsTab from "./Teams";
 import ProfileTab from "./Profile";
 import LaunchesTab from "./Launches";
 import CreativesLibraryTab from "./Creatives";
+import DashboardTab from "./Dashboard";
 import { supabase } from "./supabase";
 
 const S = {
@@ -523,7 +524,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [tab, setTab] = useState("domains");
+  const [tab, setTab] = useState("dashboard");
   const [profileOpen, setProfileOpen] = useState(false);
   const [domains, setDomains] = useState([]);
 
@@ -561,6 +562,7 @@ export default function App() {
   const userName = profile?.full_name || user.email;
 
   const TABS = [
+    { id:"dashboard", label:"🏠 Огляд" },
     { id:"domains", label:"🌐 Домени / ПВА" },
     { id:"creatives", label:"🎨 Креативи" },
     { id:"stats", label:"📊 Статистика" },
@@ -593,6 +595,7 @@ export default function App() {
       </div>
 
       <div style={{ padding:24, maxWidth:1600, margin:"0 auto" }}>
+        {tab === "dashboard" && <DashboardTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
         {tab === "domains" && <DomainsTab user={user} isAdmin={isAdmin} />}
         {tab === "creatives" && <CreativesLibraryTab user={user} isAdmin={isAdmin} domains={domains} />}
         {tab === "stats" && <StatsTab domains={domains} />}
