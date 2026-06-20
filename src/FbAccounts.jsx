@@ -28,6 +28,99 @@ const Modal = ({ title, onClose, children }) => (
   </div>
 );
 
+const ACTION_LABELS = {
+  create: "створено",
+  update: "оновлено",
+  delete: "видалено",
+  status_change: "статус",
+  folder_change: "папка",
+  buyer_change: "байєр",
+  bulk_update: "масова дія",
+  check: "чек",
+};
+
+const safeSnapshot = (row, keys) => keys.reduce((acc, key) => {
+  acc[key] = row?.[key] ?? null;
+  return acc;
+}, {});
+
+async function writeAuditLog(row) {
+  if (!row?.user_id || !row?.entity_type || !row?.entity_id || !row?.action) return;
+  try {
+    await supabase.from("crm_audit_logs").insert([{ ...row, owner_id:row.owner_id || row.user_id }]);
+  } catch (e) {
+    console.warn("audit log failed", e);
+  }
+}
+
+async function writeAuditLogs(rows) {
+  const payload = (rows || []).filter(r => r?.user_id && r?.entity_type && r?.entity_id && r?.action).map(r => ({ ...r, owner_id:r.owner_id || r.user_id }));
+  if (!payload.length) return;
+  try {
+    await supabase.from("crm_audit_logs").insert(payload);
+  } catch (e) {
+    console.warn("audit logs failed", e);
+  }
+}
+
+const AuditTrail = ({ logs=[], users=[] }) => {
+  if (!logs.length) return null;
+  const getUser = (id) => users.find(u => u.id === id)?.full_name || (id ? `${String(id).slice(0,8)}…` : "system");
+  return (
+    <div style={{ marginTop:14, border:"1px solid #1e2330", borderRadius:10, overflow:"hidden" }}>
+      <div style={{ background:"#0b0d13", padding:"9px 12px", color:"#94a3b8", fontSize:11, fontWeight:900, textTransform:"uppercase", letterSpacing:"0.07em" }}>Історія змін</div>
+      <div style={{ display:"grid", gap:0 }}>
+        {logs.slice(0,8).map(log => (
+          <div key={log.id} style={{ display:"grid", gridTemplateColumns:"110px 1fr 150px", gap:10, padding:"9px 12px", borderTop:"1px solid #1a1d23", color:"#94a3b8", fontSize:12 }}>
+            <span style={{ color:"#60a5fa", fontWeight:800 }}>{ACTION_LABELS[log.action] || log.action}</span>
+            <span style={{ color:"#cbd5e1" }}>{log.message || "—"}</span>
+            <span style={{ textAlign:"right", color:"#64748b" }}>{getUser(log.user_id)} · {new Date(log.created_at).toLocaleString("uk-UA")}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const BulkBar = ({ selectedCount, onSelectAll, onClear, folders=[], buyers=[], statusOptions=null, onMoveFolder, onAssignBuyer, onChangeStatus, onDelete, entityLabel="елементів" }) => {
+  if (!selectedCount) {
+    return (
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12, color:"#64748b", fontSize:12 }}>
+        <button onClick={onSelectAll} style={{ ...S.btnGhost, padding:"7px 10px" }}>Обрати всі видимі</button>
+        <span>Масові дії зʼявляться після вибору {entityLabel}.</span>
+      </div>
+    );
+  }
+  const selectStyle = { ...S.inp, width:190, padding:"7px 10px", fontSize:13, cursor:"pointer" };
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:12, background:"#111827", border:"1px solid #1e2330", borderRadius:12, padding:10 }}>
+      <span style={{ color:"#bfdbfe", fontWeight:900, fontSize:13 }}>Обрано: {selectedCount}</span>
+      <button onClick={onClear} style={{ ...S.btnGhost, padding:"7px 10px" }}>Скинути</button>
+      {onMoveFolder && (
+        <select value="" onChange={e=>{ if(e.target.value) onMoveFolder(e.target.value === "__none" ? null : e.target.value); }} style={selectStyle}>
+          <option value="">Перенести в папку</option>
+          <option value="__none">Без папки</option>
+          {folders.map(f=><option key={f.id} value={f.id}>📁 {f.name}</option>)}
+        </select>
+      )}
+      {onAssignBuyer && (
+        <select value="" onChange={e=>{ if(e.target.value) onAssignBuyer(e.target.value === "__none" ? null : e.target.value); }} style={selectStyle}>
+          <option value="">Призначити buyer</option>
+          <option value="__none">Не призначено</option>
+          {buyers.map(b=><option key={b.id} value={b.id}>{b.full_name}</option>)}
+        </select>
+      )}
+      {statusOptions && onChangeStatus && (
+        <select value="" onChange={e=>{ if(e.target.value) onChangeStatus(e.target.value); }} style={selectStyle}>
+          <option value="">Змінити статус</option>
+          {Object.entries(statusOptions).map(([key,label])=><option key={key} value={key}>{label}</option>)}
+        </select>
+      )}
+      {onDelete && <button onClick={onDelete} style={{ ...S.btnGhost, padding:"7px 10px", color:"#f87171" }}>🗑 Видалити</button>}
+    </div>
+  );
+};
+
 async function callFbApi(token, endpoint, params, proxy) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new Error("Немає активної сесії");
@@ -285,7 +378,7 @@ const SetupForm = ({ initial={}, buyers, setupFolders=[], onSave, onClose }) => 
 };
 
 // ─── SETUP CARD (розкривається) ───────────────────────────────────────────
-const SetupCard = ({ setup, buyers, setupFolders, isAdmin, onEdit, onDelete, onRefresh }) => {
+const SetupCard = ({ setup, buyers, setupFolders, auditLogs=[], selected=false, onToggleSelect, isAdmin, onEdit, onDelete, onRefresh }) => {
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null); // { accounts, pages, pixels }
@@ -389,6 +482,7 @@ const SetupCard = ({ setup, buyers, setupFolders, isAdmin, onEdit, onDelete, onR
         onMouseLeave={e=>e.currentTarget.style.background="#13151c"}
       >
         <span style={{ color:"#64748b", fontSize:14, transition:"transform 0.2s", display:"inline-block", transform:expanded?"rotate(90deg)":"rotate(0deg)" }}>▶</span>
+        {isAdmin && <input type="checkbox" checked={selected} onClick={e=>e.stopPropagation()} onChange={onToggleSelect} style={{ width:16, height:16, cursor:"pointer" }} />}
         <div style={{ flex:1 }}>
           <div style={{ color:"#e2e8f0", fontWeight:700, fontSize:15 }}>{setup.name}</div>
           <div style={{ color:"#64748b", fontSize:12, marginTop:2 }}>
@@ -547,6 +641,7 @@ const SetupCard = ({ setup, buyers, setupFolders, isAdmin, onEdit, onDelete, onR
 
             </div>
           ) : null}
+          <AuditTrail logs={auditLogs} users={buyers} />
         </div>
       )}
     </div>
@@ -920,7 +1015,7 @@ const FarmAccountsTable = ({ accounts }) => {
   );
 };
 
-const FarmRow = ({ farm, farmAccounts, buyers, farmFolders, isAdmin, onEdit, onDelete, onCheck, onImportAccounts, checking }) => {
+const FarmRow = ({ farm, farmAccounts, auditLogs=[], buyers, farmFolders, isAdmin, selected=false, onToggleSelect, onEdit, onDelete, onCheck, onImportAccounts, checking }) => {
   const [expanded, setExpanded] = useState(false);
   const buyer = buyers.find(b => b.id === farm.buyer_id);
   const folder = farmFolders.find(f => f.id === farm.folder_id);
@@ -935,6 +1030,7 @@ const FarmRow = ({ farm, farmAccounts, buyers, farmFolders, isAdmin, onEdit, onD
       <div onClick={()=>setExpanded(v=>!v)} style={{ padding:16, display:"grid", gridTemplateColumns:"1fr auto", gap:14, alignItems:"center", cursor:"pointer" }}>
         <div style={{ minWidth:0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+            {isAdmin && <input type="checkbox" checked={selected} onClick={e=>e.stopPropagation()} onChange={onToggleSelect} style={{ width:16, height:16, cursor:"pointer" }} />}
             <span style={{ width:9, height:9, borderRadius:"50%", background:FARM_STATUS_COLOR[statusKey] || "#64748b", display:"inline-block" }} />
             <div style={{ color:"#e2e8f0", fontWeight:800, fontSize:15, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{farm.name || "FARM"}</div>
             <span style={{ color:FARM_STATUS_COLOR[statusKey] || "#64748b", background:"#0f1117", border:"1px solid #1e2330", borderRadius:999, padding:"2px 8px", fontSize:11, fontWeight:800 }}>{FARM_STATUS[statusKey] || statusKey}</span>
@@ -963,18 +1059,20 @@ const FarmRow = ({ farm, farmAccounts, buyers, farmFolders, isAdmin, onEdit, onD
       {expanded && (
         <div style={{ background:"#0f1117", padding:16, borderTop:"1px solid #1e2330" }}>
           <FarmAccountsTable accounts={accounts} />
+          <AuditTrail logs={auditLogs} users={buyers} />
         </div>
       )}
     </div>
   );
 };
 
-const FarmsPanel = ({ farms, farmAccounts, farmFolders, buyers, user, isAdmin, onRefresh, showToast }) => {
+const FarmsPanel = ({ farms, farmAccounts, auditLogs=[], farmFolders, buyers, user, isAdmin, onRefresh, showToast }) => {
   const [modal, setModal] = useState(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [accountImportFarm, setAccountImportFarm] = useState(null);
   const [checkingId, setCheckingId] = useState(null);
   const [selectedFolder, setSelectedFolder] = useState(FARM_FOLDER_ALL);
+  const [selectedFarmIds, setSelectedFarmIds] = useState([]);
   const [q, setQ] = useState("");
 
   const folderCount = (folderId) => {
@@ -999,6 +1097,11 @@ const FarmsPanel = ({ farms, farmAccounts, farmFolders, buyers, user, isAdmin, o
     bannedAccounts: farmAccounts.filter(a=>a.status === "banned").length,
   };
 
+  const selectedFarms = farms.filter(f => selectedFarmIds.includes(f.id));
+  const selectAllVisibleFarms = () => setSelectedFarmIds(filtered.map(f => f.id));
+  const toggleFarmSelection = (id) => setSelectedFarmIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const clearFarmSelection = () => setSelectedFarmIds([]);
+
   const createFolder = async () => {
     if (!isAdmin) return;
     const name = prompt("Назва папки", `Агент ${farmFolders.length + 1}`);
@@ -1006,6 +1109,48 @@ const FarmsPanel = ({ farms, farmAccounts, farmFolders, buyers, user, isAdmin, o
     const { error } = await supabase.from("fb_farm_folders").insert([{ name:name.trim(), user_id:user.id }]);
     if (error) { showToast("Помилка створення папки: " + error.message, "error"); return; }
     showToast("Папку створено");
+    onRefresh();
+  };
+
+  const bulkUpdateFarms = async (patch, action, messageBuilder) => {
+    if (!isAdmin || selectedFarms.length === 0) return;
+    const ids = selectedFarms.map(f => f.id);
+    const { error } = await supabase.from("fb_farms").update(patch).in("id", ids);
+    if (error) { showToast("Помилка масової дії: " + error.message, "error"); return; }
+    await writeAuditLogs(selectedFarms.map(farm => ({
+      user_id:user.id,
+      owner_id:farm.user_id || user.id,
+      entity_type:"farm",
+      entity_id:farm.id,
+      action,
+      old_value:safeSnapshot(farm, ["name","buyer_id","folder_id","status"]),
+      new_value:patch,
+      message:typeof messageBuilder === "function" ? messageBuilder(farm) : messageBuilder,
+    })));
+    showToast(`Оновлено ${selectedFarms.length} фармів`);
+    clearFarmSelection();
+    onRefresh();
+  };
+
+  const bulkDeleteFarms = async () => {
+    if (!isAdmin || selectedFarms.length === 0) return;
+    if (!confirm(`Видалити ${selectedFarms.length} фармів?`)) return;
+    const ids = selectedFarms.map(f => f.id);
+    await writeAuditLogs(selectedFarms.map(farm => ({
+      user_id:user.id,
+      owner_id:farm.user_id || user.id,
+      entity_type:"farm",
+      entity_id:farm.id,
+      action:"delete",
+      old_value:safeSnapshot(farm, ["name","buyer_id","folder_id","status"]),
+      new_value:{},
+      message:`Масово видалено фарм: ${farm.name || farm.id}`,
+    })));
+    await supabase.from("fb_farm_accounts").delete().in("farm_id", ids);
+    const { error } = await supabase.from("fb_farms").delete().in("id", ids);
+    if (error) { showToast("Помилка видалення: " + error.message, "error"); return; }
+    showToast(`Видалено ${selectedFarms.length} фармів`);
+    clearFarmSelection();
     onRefresh();
   };
 
@@ -1029,9 +1174,25 @@ const FarmsPanel = ({ farms, farmAccounts, farmFolders, buyers, user, isAdmin, o
     if (!modal?.data?.id && !payload.cookie_data) { showToast("Для нового фарму потрібен cookie", "error"); return; }
 
     let error;
-    if (modal?.mode === "edit") ({ error } = await supabase.from("fb_farms").update(payload).eq("id", modal.data.id));
-    else ({ error } = await supabase.from("fb_farms").insert([payload]));
+    let savedFarm = modal?.data || null;
+    if (modal?.mode === "edit") {
+      ({ error } = await supabase.from("fb_farms").update(payload).eq("id", modal.data.id));
+    } else {
+      const result = await supabase.from("fb_farms").insert([payload]).select("id,user_id,name,buyer_id,folder_id,status").single();
+      error = result.error;
+      savedFarm = result.data;
+    }
     if (error) { showToast("Помилка збереження фарму: " + error.message, "error"); return; }
+    await writeAuditLog({
+      user_id:user.id,
+      owner_id:savedFarm?.user_id || user.id,
+      entity_type:"farm",
+      entity_id:savedFarm?.id,
+      action:modal?.mode === "edit" ? "update" : "create",
+      old_value:modal?.data?.id ? safeSnapshot(modal.data, ["name","buyer_id","folder_id","status"]) : {},
+      new_value:safeSnapshot(payload, ["name","buyer_id","folder_id","status"]),
+      message:modal?.mode === "edit" ? `Фарм оновлено: ${payload.name}` : `Фарм створено: ${payload.name}`,
+    });
     showToast(modal?.mode === "edit" ? "Фарм оновлено" : "Фарм додано");
     setModal(null);
     onRefresh();
@@ -1040,6 +1201,16 @@ const FarmsPanel = ({ farms, farmAccounts, farmFolders, buyers, user, isAdmin, o
   const deleteFarm = async (farm) => {
     if (!isAdmin) return;
     if (!confirm(`Видалити фарм "${farm.name || "FARM"}"?`)) return;
+    await writeAuditLog({
+      user_id:user.id,
+      owner_id:farm.user_id || user.id,
+      entity_type:"farm",
+      entity_id:farm.id,
+      action:"delete",
+      old_value:safeSnapshot(farm, ["name","buyer_id","folder_id","status"]),
+      new_value:{},
+      message:`Фарм видалено: ${farm.name || farm.id}`,
+    });
     await supabase.from("fb_farm_accounts").delete().eq("farm_id", farm.id);
     const { error } = await supabase.from("fb_farms").delete().eq("id", farm.id);
     if (error) { showToast("Помилка видалення: " + error.message, "error"); return; }
@@ -1068,11 +1239,13 @@ const FarmsPanel = ({ farms, farmAccounts, farmFolders, buyers, user, isAdmin, o
   const checkFarm = async (farm) => {
     setCheckingId(farm.id);
     await supabase.from("fb_farms").update({ status:"checking", check_error:null, last_check_at:new Date().toISOString() }).eq("id", farm.id);
+    await writeAuditLog({ user_id:user.id, owner_id:farm.user_id || user.id, entity_type:"farm", entity_id:farm.id, action:"status_change", old_value:{ status:farm.status || null }, new_value:{ status:"checking" }, message:`Статус: ${FARM_STATUS[farm.status] || farm.status || "—"} → на чеку` });
     onRefresh();
 
     if (!farm.access_token) {
       const message = "Для авточеку потрібен Meta access token. Cookie не використовується для автоматичного логіну.";
       await supabase.from("fb_farms").update({ status:"issue", check_error:message, last_check_at:new Date().toISOString() }).eq("id", farm.id);
+      await writeAuditLog({ user_id:user.id, owner_id:farm.user_id || user.id, entity_type:"farm", entity_id:farm.id, action:"status_change", old_value:{ status:"checking" }, new_value:{ status:"issue" }, message });
       setCheckingId(null);
       showToast(message, "error");
       onRefresh();
@@ -1116,9 +1289,11 @@ const FarmsPanel = ({ farms, farmAccounts, farmFolders, buyers, user, isAdmin, o
       const checkError = rows.length === 0 ? "Meta API не повернув кабінети" : banned > 0 ? `Є забанені кабінети: ${banned}` : null;
 
       await supabase.from("fb_farms").update({ status:finalStatus, check_error:checkError, last_check_at:now }).eq("id", farm.id);
+      await writeAuditLog({ user_id:user.id, owner_id:farm.user_id || user.id, entity_type:"farm", entity_id:farm.id, action:"status_change", old_value:{ status:"checking" }, new_value:{ status:finalStatus, banned_accounts:banned, checked_accounts:rows.length }, message:`Чек завершено: ${rows.length} каб., банів: ${banned}. Статус → ${FARM_STATUS[finalStatus] || finalStatus}` });
       showToast(`Чек завершено: ${rows.length} каб., банів: ${banned}`);
     } catch (e) {
       await supabase.from("fb_farms").update({ status:"issue", check_error:e.message, last_check_at:new Date().toISOString() }).eq("id", farm.id);
+      await writeAuditLog({ user_id:user.id, owner_id:farm.user_id || user.id, entity_type:"farm", entity_id:farm.id, action:"status_change", old_value:{ status:"checking" }, new_value:{ status:"issue", error:e.message }, message:`Чек завершився помилкою: ${e.message}` });
       showToast("Помилка чеку: " + e.message, "error");
     }
 
@@ -1174,6 +1349,22 @@ const FarmsPanel = ({ farms, farmAccounts, farmFolders, buyers, user, isAdmin, o
         </div>
       </div>
 
+      {isAdmin && (
+        <BulkBar
+          selectedCount={selectedFarmIds.length}
+          onSelectAll={selectAllVisibleFarms}
+          onClear={clearFarmSelection}
+          folders={farmFolders}
+          buyers={buyers}
+          statusOptions={FARM_STATUS}
+          entityLabel="фармів"
+          onMoveFolder={(folderId)=>bulkUpdateFarms({ folder_id:folderId }, "folder_change", farm => `Папка фарму ${farm.name || farm.id} змінена`)}
+          onAssignBuyer={(buyerId)=>bulkUpdateFarms({ buyer_id:buyerId }, "buyer_change", farm => `Buyer фарму ${farm.name || farm.id} змінений`)}
+          onChangeStatus={(status)=>bulkUpdateFarms({ status }, "status_change", farm => `Статус: ${FARM_STATUS[farm.status] || farm.status || "—"} → ${FARM_STATUS[status] || status}`)}
+          onDelete={bulkDeleteFarms}
+        />
+      )}
+
       {filtered.length === 0 ? (
         <div style={{ ...S.card, textAlign:"center", color:"#475569", padding:40 }}>Фармів немає або нічого не знайдено</div>
       ) : (
@@ -1183,10 +1374,13 @@ const FarmsPanel = ({ farms, farmAccounts, farmFolders, buyers, user, isAdmin, o
               key={farm.id}
               farm={farm}
               farmAccounts={farmAccounts}
+              auditLogs={auditLogs.filter(l => l.entity_type === "farm" && l.entity_id === farm.id)}
               buyers={buyers}
               farmFolders={farmFolders}
               isAdmin={isAdmin}
               checking={checkingId === farm.id}
+              selected={selectedFarmIds.includes(farm.id)}
+              onToggleSelect={()=>toggleFarmSelection(farm.id)}
               onCheck={checkFarm}
               onImportAccounts={setAccountImportFarm}
               onEdit={()=>setModal({ mode:"edit", data:farm })}
@@ -1252,7 +1446,9 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
   const [farmAccounts, setFarmAccounts] = useState([]);
   const [farmFolders, setFarmFolders] = useState([]);
   const [setupFolders, setSetupFolders] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
   const [selectedSetupFolder, setSelectedSetupFolder] = useState(SETUP_FOLDER_ALL);
+  const [selectedSetupIds, setSelectedSetupIds] = useState([]);
   const [section, setSection] = useState("setups");
   const [modal, setModal] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1261,7 +1457,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: s }, { data: a }, { data: p }, farmsResult, farmAccountsResult, farmFoldersResult, setupFoldersResult] = await Promise.all([
+    const [{ data: s }, { data: a }, { data: p }, farmsResult, farmAccountsResult, farmFoldersResult, setupFoldersResult, auditResult] = await Promise.all([
       supabase.from("fb_setups").select("*").order("created_at",{ascending:false}),
       supabase.from("fb_accounts").select("*"),
       supabase.from("profiles").select("id, full_name, role"),
@@ -1269,6 +1465,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
       supabase.from("fb_farm_accounts").select("*").order("checked_at",{ascending:false}),
       supabase.from("fb_farm_folders").select("*").order("name",{ascending:true}),
       supabase.from("fb_setup_folders").select("*").order("name",{ascending:true}),
+      supabase.from("crm_audit_logs").select("*").in("entity_type", ["setup","farm"]).order("created_at",{ascending:false}).limit(500),
     ]);
     if (s) setSetups(s);
     if (a) setAccounts(a);
@@ -1281,6 +1478,8 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
     else setFarmFolders([]);
     if (!setupFoldersResult.error) setSetupFolders(setupFoldersResult.data || []);
     else setSetupFolders([]);
+    if (!auditResult.error) setAuditLogs(auditResult.data || []);
+    else setAuditLogs([]);
     setLoading(false);
   };
 
@@ -1295,6 +1494,10 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
   const filteredSetups = setups.filter(s => selectedSetupFolder === SETUP_FOLDER_ALL
     || (selectedSetupFolder === SETUP_FOLDER_NONE ? !s.folder_id : s.folder_id === selectedSetupFolder)
   );
+  const selectedSetups = setups.filter(s => selectedSetupIds.includes(s.id));
+  const selectAllVisibleSetups = () => setSelectedSetupIds(filteredSetups.map(s => s.id));
+  const toggleSetupSelection = (id) => setSelectedSetupIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const clearSetupSelection = () => setSelectedSetupIds([]);
 
   const createSetupFolder = async () => {
     if (!isAdmin) return;
@@ -1306,14 +1509,59 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
     fetchAll();
   };
 
+  const bulkUpdateSetups = async (patch, action, messageBuilder) => {
+    if (!isAdmin || selectedSetups.length === 0) return;
+    const ids = selectedSetups.map(s => s.id);
+    const { error } = await supabase.from("fb_setups").update(patch).in("id", ids);
+    if (error) { showToast("Помилка масової дії: " + error.message, "error"); return; }
+    await writeAuditLogs(selectedSetups.map(setup => ({
+      user_id:user.id,
+      owner_id:setup.user_id || user.id,
+      entity_type:"setup",
+      entity_id:setup.id,
+      action,
+      old_value:safeSnapshot(setup, ["name","buyer_id","folder_id"]),
+      new_value:patch,
+      message:typeof messageBuilder === "function" ? messageBuilder(setup) : messageBuilder,
+    })));
+    showToast(`Оновлено ${selectedSetups.length} сетапів`);
+    clearSetupSelection();
+    fetchAll();
+  };
+
+  const bulkDeleteSetups = async () => {
+    if (!isAdmin || selectedSetups.length === 0) return;
+    if (!confirm(`Видалити ${selectedSetups.length} сетапів і всі їх акаунти?`)) return;
+    const ids = selectedSetups.map(s => s.id);
+    await writeAuditLogs(selectedSetups.map(setup => ({
+      user_id:user.id,
+      owner_id:setup.user_id || user.id,
+      entity_type:"setup",
+      entity_id:setup.id,
+      action:"delete",
+      old_value:safeSnapshot(setup, ["name","buyer_id","folder_id"]),
+      new_value:{},
+      message:`Масово видалено сетап: ${setup.name || setup.id}`,
+    })));
+    await supabase.from("fb_accounts").delete().in("setup_id", ids);
+    const { error } = await supabase.from("fb_setups").delete().in("id", ids);
+    if (error) { showToast("Помилка видалення: " + error.message, "error"); return; }
+    showToast(`Видалено ${selectedSetups.length} сетапів`);
+    clearSetupSelection();
+    fetchAll();
+  };
+
   const saveSetup = async (f) => {
     const payload = { name:f.name, token:f.token, buyer_id:f.buyer_id||null, folder_id:f.folder_id||null, proxy_type:f.proxy_type, proxy_host:f.proxy_host, proxy_port:f.proxy_port, proxy_user:f.proxy_user, proxy_pass:f.proxy_pass, user_id:user.id };
     if (modal.mode==="add") {
-      const { error } = await supabase.from("fb_setups").insert([payload]);
+      const { data, error } = await supabase.from("fb_setups").insert([payload]).select("id,user_id,name,buyer_id,folder_id").single();
       if (error) { showToast("❌ "+error.message,"error"); return; }
+      await writeAuditLog({ user_id:user.id, owner_id:data?.user_id || user.id, entity_type:"setup", entity_id:data?.id, action:"create", old_value:{}, new_value:safeSnapshot(payload, ["name","buyer_id","folder_id"]), message:`Сетап створено: ${payload.name}` });
       showToast("Сетап додано ✓");
     } else {
-      await supabase.from("fb_setups").update(payload).eq("id", modal.data.id);
+      const { error } = await supabase.from("fb_setups").update(payload).eq("id", modal.data.id);
+      if (error) { showToast("❌ "+error.message,"error"); return; }
+      await writeAuditLog({ user_id:user.id, owner_id:modal.data.user_id || user.id, entity_type:"setup", entity_id:modal.data.id, action:"update", old_value:safeSnapshot(modal.data, ["name","buyer_id","folder_id"]), new_value:safeSnapshot(payload, ["name","buyer_id","folder_id"]), message:`Сетап оновлено: ${payload.name}` });
       showToast("Збережено ✓");
     }
     setModal(null);
@@ -1322,6 +1570,8 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
 
   const delSetup = async (id) => {
     if (!confirm("Видалити сетап і всі його акаунти?")) return;
+    const setup = setups.find(s => s.id === id);
+    if (setup) await writeAuditLog({ user_id:user.id, owner_id:setup.user_id || user.id, entity_type:"setup", entity_id:id, action:"delete", old_value:safeSnapshot(setup, ["name","buyer_id","folder_id"]), new_value:{}, message:`Сетап видалено: ${setup.name || id}` });
     await supabase.from("fb_accounts").delete().eq("setup_id", id);
     await supabase.from("fb_setups").delete().eq("id", id);
     showToast("Видалено");
@@ -1343,7 +1593,7 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
       <FbAccountsSubnav active={section} onChange={setSection} />
 
       {section === "farms" ? (
-        <FarmsPanel farms={farms} farmAccounts={farmAccounts} farmFolders={farmFolders} buyers={buyers} user={user} isAdmin={isAdmin} onRefresh={fetchAll} showToast={showToast} />
+        <FarmsPanel farms={farms} farmAccounts={farmAccounts} auditLogs={auditLogs} farmFolders={farmFolders} buyers={buyers} user={user} isAdmin={isAdmin} onRefresh={fetchAll} showToast={showToast} />
       ) : (
         <>
           {/* Stats */}
@@ -1387,6 +1637,20 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
             <button onClick={()=>setModal({mode:"add",data:{}})} style={S.btn}>+ Додати сетап</button>
           </div>
 
+          {isAdmin && (
+            <BulkBar
+              selectedCount={selectedSetupIds.length}
+              onSelectAll={selectAllVisibleSetups}
+              onClear={clearSetupSelection}
+              folders={setupFolders}
+              buyers={buyers}
+              entityLabel="сетапів"
+              onMoveFolder={(folderId)=>bulkUpdateSetups({ folder_id:folderId }, "folder_change", setup => `Папка сетапу ${setup.name || setup.id} змінена`)}
+              onAssignBuyer={(buyerId)=>bulkUpdateSetups({ buyer_id:buyerId }, "buyer_change", setup => `Buyer сетапу ${setup.name || setup.id} змінений`)}
+              onDelete={bulkDeleteSetups}
+            />
+          )}
+
           {/* Setups */}
           {loading ? <div style={{ textAlign:"center",color:"#475569",padding:40 }}>Завантаження…</div> : (
             filteredSetups.length===0
@@ -1397,6 +1661,9 @@ export default function FbAccountsTab({ user, isAdmin, canSeeAll }) {
                   setup={s}
                   buyers={buyers}
                   setupFolders={setupFolders}
+                  auditLogs={auditLogs.filter(l => l.entity_type === "setup" && l.entity_id === s.id)}
+                  selected={selectedSetupIds.includes(s.id)}
+                  onToggleSelect={()=>toggleSetupSelection(s.id)}
                   isAdmin={isAdmin}
                   onEdit={()=>setModal({mode:"edit",data:s})}
                   onDelete={()=>delSetup(s.id)}
