@@ -9,6 +9,7 @@ import TasksTab from "./Tasks";
 import AnalyticsTab from "./Analytics";
 import CsvToolsTab from "./CsvTools";
 import AccessTab from "./Access";
+import TopControlTab from "./TopControl";
 import { supabase } from "./supabase";
 
 const S = {
@@ -171,7 +172,7 @@ const DomainsTab = ({ user, isAdmin }) => {
 
   useEffect(() => { fetchRows(); }, []);
 
-  const filtered = rows.filter(d => [d.domain,d.pwa,d.offer,d.geo,d.buyer,d.status].join(" ").toLowerCase().includes(filter.toLowerCase()));
+  const filtered = rows.filter(d => !d.archived && [d.domain,d.pwa,d.offer,d.geo,d.buyer,d.status].join(" ").toLowerCase().includes(filter.toLowerCase()));
 
   const handleSave = async (f) => {
     setSaving(true);
@@ -195,10 +196,10 @@ const DomainsTab = ({ user, isAdmin }) => {
   };
 
   const del = async (id) => {
-    if (!confirm("Видалити домен?")) return;
-    const { error } = await supabase.from("domains").delete().eq("id", id);
-    if (error) showToast("Помилка: " + error.message, "error");
-    else { showToast("Видалено"); fetchRows(); }
+    if (!confirm("Перенести домен в архів?")) return;
+    const { error } = await supabase.from("domains").update({ archived:true }).eq("id", id);
+    if (error) showToast("Помилка: " + error.message + ". Якщо колонка archived ще не існує — виконай TOP CRM SQL migration.", "error");
+    else { showToast("Домен перенесено в архів"); fetchRows(); }
   };
 
   return (
@@ -573,6 +574,7 @@ export default function App() {
 
   const TABS = [
     { id:"dashboard", label:"🏠 Огляд" },
+    { id:"control", label:"🧭 Контроль" },
     { id:"domains", label:"🌐 Домени / ПВА" },
     { id:"creatives", label:"🎨 Креативи" },
     { id:"stats", label:"📊 Статистика" },
@@ -610,6 +612,7 @@ export default function App() {
 
       <div style={{ padding:24, maxWidth:1600, margin:"0 auto" }}>
         {tab === "dashboard" && <DashboardTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} />}
+        {tab === "control" && <TopControlTab user={user} isAdmin={isAdmin} canSeeAll={canSeeAll} onNavigate={setTab} />}
         {tab === "domains" && <DomainsTab user={user} isAdmin={isAdmin} />}
         {tab === "creatives" && <CreativesLibraryTab user={user} isAdmin={isAdmin} domains={domains} />}
         {tab === "stats" && <StatsTab domains={domains} />}

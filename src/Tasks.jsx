@@ -93,6 +93,7 @@ export default function TasksTab({ user, isAdmin, canSeeAll }) {
   useEffect(() => { try { localStorage.setItem("arbcrm_tasks_filter", JSON.stringify(filter)); } catch {} }, [filter]);
 
   const filtered = useMemo(() => tasks.filter(t => {
+    if (t.archived) return false;
     if (filter.status === "active" && ["done", "canceled"].includes(t.status)) return false;
     if (filter.status && filter.status !== "active" && t.status !== filter.status) return false;
     if (filter.priority && t.priority !== filter.priority) return false;
@@ -101,11 +102,12 @@ export default function TasksTab({ user, isAdmin, canSeeAll }) {
     return !filter.q.trim() || text.includes(filter.q.trim().toLowerCase());
   }), [tasks, filter, profiles]);
 
+  const activeTasks = tasks.filter(t => !t.archived);
   const stats = {
-    active:tasks.filter(t => !["done", "canceled"].includes(t.status)).length,
-    overdue:tasks.filter(overdue).length,
-    soon:tasks.filter(dueSoon).length,
-    done:tasks.filter(t => t.status === "done").length,
+    active:activeTasks.filter(t => !["done", "canceled"].includes(t.status)).length,
+    overdue:activeTasks.filter(overdue).length,
+    soon:activeTasks.filter(dueSoon).length,
+    done:activeTasks.filter(t => t.status === "done").length,
   };
 
   const saveTask = async (payload) => {
@@ -121,9 +123,9 @@ export default function TasksTab({ user, isAdmin, canSeeAll }) {
     if (error) showToast("Помилка: " + error.message, "error"); else { showToast("Задачу закрито"); fetchAll(); }
   };
   const del = async (task) => {
-    if (!confirm(`Видалити задачу "${task.title}"?`)) return;
-    const { error } = await supabase.from("crm_tasks").delete().eq("id", task.id);
-    if (error) showToast("Помилка: " + error.message, "error"); else { showToast("Видалено"); fetchAll(); }
+    if (!confirm(`Перенести задачу "${task.title}" в архів?`)) return;
+    const { error } = await supabase.from("crm_tasks").update({ archived:true }).eq("id", task.id);
+    if (error) showToast("Помилка: " + error.message + ". Якщо колонка archived ще не існує — виконай TOP CRM SQL migration.", "error"); else { showToast("Задачу перенесено в архів"); fetchAll(); }
   };
 
   return <div>
@@ -166,7 +168,7 @@ export default function TasksTab({ user, isAdmin, canSeeAll }) {
             <div style={{ display:"flex", gap:8, alignItems:"start" }}>
               {task.status !== "done" && <button onClick={()=>markDone(task)} style={{ ...S.btnGhost, color:"#4ade80" }}>✓</button>}
               <button onClick={()=>setModal({ mode:"edit", data:task })} style={S.btnGhost}>✏️</button>
-              {(isAdmin || task.user_id === user.id) && <button onClick={()=>del(task)} style={S.btnDanger}>🗑</button>}
+              {(isAdmin || task.user_id === user.id) && <button onClick={()=>del(task)} style={S.btnDanger}>📦</button>}
             </div>
           </div>
         </div>;

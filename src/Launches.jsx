@@ -303,7 +303,7 @@ export default function LaunchesTab({ user, isAdmin, canSeeAll }) {
 
   useEffect(() => { fetchAll(); }, []);
 
-  const visibleRows = useMemo(() => rows.filter(row => mode === "launched" ? row.status === "launched" : row.status !== "launched"), [rows, mode]);
+  const visibleRows = useMemo(() => rows.filter(row => !row.archived && (mode === "launched" ? row.status === "launched" : row.status !== "launched")), [rows, mode]);
   const selectedRows = rows.filter(r => r._selected && (mode === "launched" ? r.status === "launched" : r.status !== "launched"));
 
   const templateFromRow = (row) => {
@@ -373,10 +373,13 @@ export default function LaunchesTab({ user, isAdmin, canSeeAll }) {
   const removeSelected = async () => {
     const toRemove = selectedRows;
     if (!toRemove.length) return;
-    if (!confirm(`Видалити ${toRemove.length} рядків?`)) return;
+    if (!confirm(`Перенести ${toRemove.length} рядків запуску в архів?`)) return;
     const ids = toRemove.map(r => r.id).filter(Boolean);
-    if (ids.length) await supabase.from("fb_launch_rows").delete().in("id", ids);
-    setRows(prev => prev.filter(r => !toRemove.some(x => x._localId === r._localId)));
+    if (ids.length) {
+      const { error } = await supabase.from("fb_launch_rows").update({ archived:true }).in("id", ids);
+      if (error) { showToast("Помилка архівації: " + error.message + ". Виконай TOP CRM SQL migration.", "error"); return; }
+    }
+    setRows(prev => prev.map(r => toRemove.some(x => x._localId === r._localId) ? { ...r, archived:true } : r));
   };
 
   const saveRows = async () => {
@@ -601,7 +604,7 @@ export default function LaunchesTab({ user, isAdmin, canSeeAll }) {
           <button onClick={saveTemplate} style={S.btnGhost}>☆ Зберегти шаблон</button>
           <button onClick={deleteTemplate} disabled={!selectedTemplateId} style={{ ...S.btnGhost, color:"#f87171", opacity:selectedTemplateId ? 1 : 0.45 }}>🗑 Шаблон</button>
           <div style={{ flex:1 }} />
-          <button onClick={removeSelected} disabled={!selectedRows.length} style={{ ...S.btnDanger, opacity:selectedRows.length ? 1 : 0.45 }}>Видалити вибрані</button>
+          <button onClick={removeSelected} disabled={!selectedRows.length} style={{ ...S.btnDanger, opacity:selectedRows.length ? 1 : 0.45 }}>📦 Архів вибраних</button>
           <button onClick={saveRows} disabled={saving} style={{ ...S.btn, opacity:saving ? 0.7 : 1 }}>{saving ? "Зберігаю…" : "💾 Зберегти"}</button>
           <button onClick={launchSelected} disabled={launching || !selectedRows.length} style={{ ...S.btnGreen, opacity:launching || !selectedRows.length ? 0.55 : 1 }}>{launching ? "Запускаю…" : "🚀 Запустити вибрані"}</button>
           <button onClick={launchReady} disabled={launching} style={{ ...S.btnGhost, opacity:launching ? 0.6 : 1 }}>🚀 Запустити готові</button>

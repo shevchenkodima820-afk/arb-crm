@@ -117,22 +117,25 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
   const metrics = useMemo(() => {
     const activeSetups = data.setups.filter(s => !s.archived);
     const activeFarms = data.farms.filter(f => !f.archived);
+    const activeDomains = data.domains.filter(d => !d.archived);
+    const activeLaunches = data.launches.filter(r => !r.archived);
+    const liveTasks = data.tasks.filter(t => !t.archived);
     const deadProxy = [...activeSetups, ...activeFarms].filter(x => x.proxy_status === "dead").length;
     const noProxy = [...activeSetups, ...activeFarms].filter(x => !x.proxy_host).length;
     const bannedFarmAccounts = data.farmAccounts.filter(a => a.status === "banned").length;
     const bannedAccounts = data.accounts.filter(a => a.status === "забанений").length;
     const todaySpend = data.accounts.reduce((s,a)=>s+(parseFloat(a.today_spend)||0),0);
-    const activeTasks = data.tasks.filter(isActiveTask);
-    const overdueTasks = data.tasks.filter(isOverdueTask);
+    const activeTasks = liveTasks.filter(isActiveTask);
+    const overdueTasks = liveTasks.filter(isOverdueTask);
     const unsortedCreatives = data.creatives.filter(c => !c.archived && !c.folder_id).length;
     const archivedCreatives = data.creatives.filter(c => c.archived).length;
-    const deadDomains = data.domains.filter(d => d.status === "мертвий").length;
-    const pausedDomains = data.domains.filter(d => d.status === "на паузі").length;
-    const launchesError = data.launches.filter(r => r.status === "error").length;
+    const deadDomains = activeDomains.filter(d => d.status === "мертвий").length;
+    const pausedDomains = activeDomains.filter(d => d.status === "на паузі").length;
+    const launchesError = activeLaunches.filter(r => r.status === "error").length;
     const penalty = deadProxy*10 + noProxy*4 + (bannedFarmAccounts+bannedAccounts)*9 + launchesError*8 + overdueTasks.length*7 + unsortedCreatives*2 + deadDomains*5;
     const healthScore = Math.max(0, Math.min(100, 100 - penalty));
     return {
-      domains:data.domains.length,
+      domains:activeDomains.length,
       creatives:data.creatives.filter(c => !c.archived).length,
       setups:activeSetups.length,
       farms:activeFarms.length,
@@ -140,7 +143,7 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
       noProxy,
       bannedFarmAccounts,
       bannedAccounts,
-      launchesDraft:data.launches.filter(r => r.status === "draft" || r.status === "ready").length,
+      launchesDraft:activeLaunches.filter(r => r.status === "draft" || r.status === "ready").length,
       launchesError,
       todaySpend,
       activeTasks:activeTasks.length,
@@ -160,9 +163,9 @@ export default function DashboardTab({ user, isAdmin, canSeeAll }) {
     data.farms.filter(f => !f.archived && ["banned", "issue", "checking"].includes(f.status)).forEach(f => out.push({ level:f.status === "banned" ? "critical" : "warn", title:"Статус фарму потребує уваги", text:`${f.name || f.id} · ${f.status}${f.check_error ? ` · ${f.check_error}` : ""}`, meta:safeDate(f.last_check_at) }));
     data.farmAccounts.filter(a => a.status === "banned").slice(0,20).forEach(a => out.push({ level:"critical", title:"Бан кабінета у фармі", text:`${a.name || a.fb_account_id} · ${a.fb_account_id}`, meta:safeDate(a.checked_at) }));
     data.accounts.filter(a => a.status === "забанений").slice(0,20).forEach(a => out.push({ level:"critical", title:"Бан FB акаунта", text:`${a.name || a.fb_account_id} · ${a.fb_account_id}`, meta:a.currency || "" }));
-    data.launches.filter(r => r.status === "error").slice(0,20).forEach(r => out.push({ level:"critical", title:"Помилка запуску", text:r.error || r.notes || r.id, meta:safeDate(r.updated_at || r.created_at) }));
-    data.tasks.filter(isOverdueTask).slice(0,20).forEach(t => out.push({ level:"critical", title:"Прострочена задача", text:t.title, meta:safeDate(t.due_at) }));
-    data.tasks.filter(isSoonTask).slice(0,20).forEach(t => out.push({ level:"warn", title:"Задача до 24 год", text:t.title, meta:safeDate(t.due_at) }));
+    data.launches.filter(r => !r.archived && r.status === "error").slice(0,20).forEach(r => out.push({ level:"critical", title:"Помилка запуску", text:r.error || r.notes || r.id, meta:safeDate(r.updated_at || r.created_at) }));
+    data.tasks.filter(t => !t.archived).filter(isOverdueTask).slice(0,20).forEach(t => out.push({ level:"critical", title:"Прострочена задача", text:t.title, meta:safeDate(t.due_at) }));
+    data.tasks.filter(t => !t.archived).filter(isSoonTask).slice(0,20).forEach(t => out.push({ level:"warn", title:"Задача до 24 год", text:t.title, meta:safeDate(t.due_at) }));
     data.setups.filter(s => !s.archived && !s.proxy_host).slice(0,12).forEach(s => out.push({ level:"warn", title:"Сетап без proxy", text:s.name || s.id, meta:"додай proxy" }));
     data.farms.filter(f => !f.archived && !f.proxy_host).slice(0,12).forEach(f => out.push({ level:"warn", title:"Фарм без proxy", text:f.name || f.id, meta:"додай proxy" }));
     return out.filter(a => [a.title, a.text, a.meta].join(" ").toLowerCase().includes(q.trim().toLowerCase()));
